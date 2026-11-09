@@ -5,6 +5,7 @@ description = "Autonomous multi-agent software engineer: GitHub issue in, tested
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=2.6.0",
+    "gitpython>=3.2.1",
     "pydantic>=2.14.3",
     "python-dotenv>=1.2.4",
     "rich>=15.0.0",

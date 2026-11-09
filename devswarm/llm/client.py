@@ -73,7 +73,7 @@ class AnthropicLLMClient:
                 raise LLMError(str(exc), retries=tuple(retries)) from exc
             else:
                 latency_ms = int((time.perf_counter() - started) * 1000)
-                return _to_response(message, latency_ms, tuple(retries))
+                return _to_response(message, request.model, latency_ms, tuple(retries))
 
             if attempt > self._policy.max_retries:
                 raise LLMError(
@@ -120,22 +120,24 @@ def _parse_retry_after(value: str | None) -> float | None:
 
 
 def _to_response(
-    message: Message, latency_ms: int, retries: tuple[RetryRecord, ...]
+    message: Message, priced_model: str, latency_ms: int, retries: tuple[RetryRecord, ...]
 ) -> LLMResponse:
+    # Priced by the ID we asked for: the API may echo a variant our table doesn't list,
+    # and failing here would lose the record of a call that has already been paid for.
     usage = TokenUsage(
         input_tokens=message.usage.input_tokens,
         output_tokens=message.usage.output_tokens,
         cache_read_input_tokens=message.usage.cache_read_input_tokens or 0,
         cache_creation_input_tokens=message.usage.cache_creation_input_tokens or 0,
     )
-    warn_if_near_long_context(message.model, usage)
+    warn_if_near_long_context(priced_model, usage)
     return LLMResponse(
         id=message.id,
         model=message.model,
         content=message.content,
         stop_reason=message.stop_reason or "unknown",
         usage=usage,
-        cost_usd=calculate_cost(message.model, usage),
+        cost_usd=calculate_cost(priced_model, usage),
         latency_ms=latency_ms,
         refusal_category=message.stop_details.category if message.stop_details else None,
         retries=retries,

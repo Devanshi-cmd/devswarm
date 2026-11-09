@@ -7,12 +7,15 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from git.exc import GitCommandError
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.table import Table
 
 from devswarm import __version__
+from devswarm.agents.base import AgentEvent, EventHandler
 from devswarm.config import (
     AGENT_NAMES,
     DEFAULT_MODEL,
@@ -23,9 +26,12 @@ from devswarm.config import (
     parse_agent_overrides,
     parse_effort_overrides,
 )
+from devswarm.github.local import WorkspaceError
 from devswarm.llm.client import AnthropicLLMClient
 from devswarm.llm.mock import MockLLMClient, text_turn
 from devswarm.llm.types import LLMClient, LLMError
+from devswarm.orchestrator.budget import BudgetLimits
+from devswarm.pipeline import run_coder_locally
 from devswarm.sandbox.base import SandboxError
 from devswarm.sandbox.check import run_checks
 from devswarm.smoke import run_smoke
@@ -80,8 +86,9 @@ def run(
     effort: Annotated[
         list[str] | None, typer.Option(help="Per-agent effort, e.g. coder=high.")
     ] = None,
+    max_usd: Annotated[float, typer.Option(help="Stop the run at this cost.")] = 1.00,
 ) -> None:
-    """Run the pipeline on a task (stub: validates options until M3 and M4)."""
+    """Fix a task in a local repository and leave the result on a branch."""
     if bool(issue) == bool(repo and task):
         raise _fail("use either --issue, or --repo together with --task")
     try:
@@ -98,7 +105,52 @@ def run(
         agent = config.for_agent(name)
         table.add_row(name, agent.model, agent.effort, str(agent.max_turns))
     console.print(table)
-    raise _fail(f"the pipeline is not built yet (dry_run={dry_run}); it arrives in M3 and M4")
+    if issue or repo is None or task is None:
+        raise _fail(f"the GitHub flow is not built yet (dry_run={dry_run}); it arrives in M5")
+
+    api_key = get_secret("ANTHROPIC_API_KEY")
+    if api_key is None:
+        raise _fail("ANTHROPIC_API_KEY is not set; add it to .env")
+
+    with _store() as store:
+        try:
+            outcome = run_coder_locally(
+                task=task,
+                repo=Path(repo),
+                llm=AnthropicLLMClient.from_api_key(api_key),
+                store=store,
+                work_root=db_path().parent / "workspaces",
+                config=config,
+                limits=BudgetLimits(max_usd=max_usd),
+                on_event=_event_printer(Redactor.from_env()),
+            )
+        except (SandboxError, WorkspaceError, GitCommandError) as exc:
+            raise _fail(str(exc)) from exc
+        cost = store.get_run(outcome.run_id)["cost_usd"]
+
+    summary = Table(title=f"Run {outcome.run_id}", show_header=False)
+    summary.add_row("Status", outcome.status)
+    summary.add_row("Tests", "passed" if outcome.tests_passed else "not passed")
+    summary.add_row("Agent turns", str(outcome.coder.turns))
+    summary.add_row("Cost", f"${cost:.6f}")
+    summary.add_row("Branch", outcome.workspace.branch)
+    summary.add_row("Working copy", str(outcome.workspace.path))
+    if outcome.diff_path:
+        summary.add_row("Diff", str(outcome.diff_path))
+    console.print(summary)
+    if outcome.status != "done":
+        raise _fail(outcome.error or "the run failed")
+
+
+def _event_printer(redactor: Redactor) -> EventHandler:
+    def handle(event: AgentEvent) -> None:
+        if event.kind == "turn":
+            return
+        style = "red" if event.is_error else "green" if event.kind == "finish" else "cyan"
+        # escape: tool arguments can contain square brackets, which Rich reads as markup.
+        console.print(f"[{style}]{event.agent}[/] {escape(redactor.text(event.detail))}")
+
+    return handle
 
 
 @app.command()

@@ -35,6 +35,7 @@ class LanguageProfile(Protocol):
     def matches(self, repo: Path) -> bool: ...
     def dependencies(self, repo: Path) -> list[str]: ...
     def dockerfile(self) -> str: ...
+    def test_command(self) -> list[str]: ...
 
 
 def _plain_requirements(lines: list[str]) -> list[str]:
@@ -80,6 +81,9 @@ class PythonProfile:
             for group in ("dev", "test", "tests"):
                 found += _strings(table.get(group))
         return found
+
+    def test_command(self) -> list[str]:
+        return ["pytest", "-q"]
 
     def dockerfile(self) -> str:
         # Tools first: this layer stays cached across every repository and dependency change.

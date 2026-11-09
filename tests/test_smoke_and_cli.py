@@ -65,11 +65,17 @@ def test_cli_report_unknown_run() -> None:
 
 def test_cli_run_shows_resolved_config() -> None:
     result = runner.invoke(
-        app, ["run", "--repo", ".", "--task", "x", "--model", "reviewer=claude-sonnet-5-5"]
+        app, ["run", "--issue", "a/b#1", "--model", "reviewer=claude-sonnet-5-5"]
     )
     assert "claude-sonnet-5-5" in result.output
     assert "not built yet" in result.output
     assert result.exit_code == 1
+
+
+def test_cli_run_needs_a_key() -> None:
+    result = runner.invoke(app, ["run", "--repo", ".", "--task", "x"])
+    assert result.exit_code == 1
+    assert "ANTHROPIC_API_KEY" in result.output
 
 
 @pytest.mark.parametrize(

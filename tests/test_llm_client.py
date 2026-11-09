@@ -170,3 +170,9 @@ def test_warns_when_near_long_context(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING):
         Harness([httpx2.Response(200, json=body)]).client.create(REQUEST)
     assert "close to the 100000 long-context threshold" in caplog.text
+
+
+def test_cost_uses_the_requested_model_when_the_api_echoes_a_variant() -> None:
+    body = success_body(model="claude-haiku-5-5-20990101")
+    response = Harness([httpx2.Response(200, json=body)]).client.create(REQUEST)
+    assert response.cost_usd == pytest.approx(220 / 1_000_000)

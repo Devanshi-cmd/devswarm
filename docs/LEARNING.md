@@ -114,3 +114,41 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Alternatives:** `pip install .` in the build, which runs the repo's own build code with network on.
 - **What would break:** Untrusted repo code would run while the network is open.
 - **Limit:** Named packages can still run their own install scripts during the build, and that phase has network. No secrets or repo files are present.
+
+## M3: Single agent
+
+### The loop checks the stop reason before touching the content
+
+- **What:** `refusal` and `max_tokens` return before any tool runs.
+- **Why:** A response cut off by `max_tokens` can hold an incomplete tool call.
+- **Alternatives:** Running whatever `tool_use` blocks appear.
+- **What would break:** A half-written `edit_file` could damage a file.
+
+### `finish` is a tool with `tool_choice: auto`, plus a nudge
+
+- **What:** The agent is told to call `finish`. If it stops without doing so, it is reminded at most twice.
+- **Why:** Forced `tool_choice` returns a 400 on Sonnet 5.5 and Opus 5.5, and skips thinking on Haiku.
+- **Alternatives:** Forcing the tool, or parsing JSON from the final text.
+- **What would break:** Swapping in a stronger Reviewer would fail on every request.
+
+### DevSwarm runs the tests itself
+
+- **What:** After the Coder finishes, the suite runs in the sandbox and the exit code decides the outcome.
+- **Why:** A model saying "all tests pass" is not evidence.
+- **Alternatives:** Trusting the agent's summary.
+- **What would break:** A run could report success with broken code.
+
+### Agents work on a private copy
+
+- **What:** A run clones or copies the repo under `.devswarm/workspaces/`. The result returns as a branch.
+- **Why:** A failed or hostile run can't damage the user's checkout. A clone also carries no hooks.
+- **Alternatives:** Working in place on a new branch.
+- **What would break:** A run would overwrite uncommitted work, and could leave the checkout in a broken state.
+
+### Untrusted text sits in randomly labelled blocks
+
+- **What:** Task text and summaries go in `<untrusted_data id="random">` blocks in the user message.
+- **Why:** The system prompt tells the model these blocks are data, and an unguessable id stops text from closing its own block.
+- **Alternatives:** A fixed delimiter, or a random id in the system prompt.
+- **What would break:** A fixed delimiter can be spoofed by the issue text. A random id in the system prompt changes the prefix, so nothing would ever be cached.
+- **Limit:** This lowers the risk of prompt injection but cannot remove it. The real protection is that a compromised agent still has no network, no secrets and no way to reach the host.
