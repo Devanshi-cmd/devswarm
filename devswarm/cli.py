@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -25,6 +26,8 @@ from devswarm.config import (
 from devswarm.llm.client import AnthropicLLMClient
 from devswarm.llm.mock import MockLLMClient, text_turn
 from devswarm.llm.types import LLMClient, LLMError
+from devswarm.sandbox.base import SandboxError
+from devswarm.sandbox.check import run_checks
 from devswarm.smoke import run_smoke
 from devswarm.storage.redact import RedactingLogFilter, Redactor
 from devswarm.storage.report import render_markdown
@@ -170,6 +173,27 @@ def report(run_id: str) -> None:
         except RunNotFoundError:
             raise _fail(f"no run with id {run_id!r}") from None
     console.print(Markdown(markdown))
+
+
+@app.command("sandbox-check")
+def sandbox_check(
+    repo: Annotated[Path, typer.Option(help="Repository to mount.")] = Path("."),
+) -> None:
+    """Start a real sandbox and verify each isolation guarantee."""
+    try:
+        results = run_checks(repo)
+    except SandboxError as exc:
+        raise _fail(str(exc)) from exc
+
+    table = Table(title="Sandbox isolation")
+    table.add_column("Guarantee")
+    table.add_column("Result")
+    for name, passed in results:
+        table.add_row(name, "[green]pass[/]" if passed else "[red]FAIL[/]")
+    console.print(table)
+    failed = [name for name, passed in results if not passed]
+    if failed:
+        raise _fail(f"{len(failed)} guarantee(s) failed: {', '.join(failed)}")
 
 
 @app.command()

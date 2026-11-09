@@ -62,3 +62,55 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Alternatives:** Return a cost of 0 for unknown models, or assume cache reads are always 0.1× input.
 - **What would break:** A zero cost would let a run ignore its budget. The 0.1× assumption is wrong for Opus 5.5, where reads are 0.05×.
 - **Assumption:** We count cached and uncached input toward the 100K threshold. That is the cautious reading, because the docs we had only say "prompt length".
+
+## M2: Tools and sandbox
+
+### Calling the docker CLI, not a Python Docker library
+
+- **What:** `subprocess` runs `docker run` and `docker exec` with argument lists, never a shell string on the host.
+- **Why:** Every isolation flag sits in one readable list, and timeouts are simple.
+- **Alternatives:** The `docker` Python package, whose `exec_run` has no timeout.
+- **What would break:** A hung command would hang the whole run.
+
+### A timeout kills the whole container
+
+- **What:** When a command times out, the container is removed and replaced. The repo is a mount, so no work is lost.
+- **Why:** Killing the `docker exec` client leaves the command running inside, along with anything it started in the background.
+- **Alternatives:** Running `timeout` inside the container, which misses background children.
+- **What would break:** A leftover process could keep changing files during later steps.
+
+### `.git` is mounted read-only
+
+- **What:** The agent can read `.git` from inside the container but not change it. `git_diff` uses a private index and object directory in `/tmp`.
+- **Why:** Host git later commits this repo in M5. A hook or config planted in `.git` would then run on the host, outside the sandbox.
+- **Alternatives:** Trusting the agent, or scanning `.git` before committing.
+- **What would break:** Any command in the sandbox could turn into code execution on the host.
+
+### git and ripgrep run inside the sandbox
+
+- **What:** `search_code` and `git_diff` go through `sandbox.exec`, even though they look harmless.
+- **Why:** A repo's git config can name programs for git to run, so `git diff` on an untrusted repo is not read-only.
+- **Alternatives:** Running them on the host, which is simpler and faster.
+- **What would break:** Rule 1, no command ever runs on the host.
+
+### Opening files one path component at a time
+
+- **What:** File tools run on the host, so they check the path and then open each component with `O_NOFOLLOW` relative to the previous directory. Files must be regular files, and `O_NONBLOCK` stops a FIFO from hanging.
+- **Why:** The agent can change the folder from inside the container, so a path that was safe when checked can become a symlink before it is opened.
+- **Alternatives:** `Path.resolve()` and a prefix check alone.
+- **What would break:** That leaves a time-of-check to time-of-use race, and an escaping symlink could reach any file on the host.
+
+### Output keeps the head and tail, with bounded memory
+
+- **What:** Each stream keeps its first 2,000 and last 8,000 bytes and reports how many were dropped.
+- **Why:** The error is usually at the end of a log, and the command's setup at the start.
+- **Alternatives:** Keeping only the start, or capturing everything and cutting afterwards.
+- **What would break:** A head-only cut hides the failure. Capturing everything lets `yes` exhaust host memory.
+
+### Only named dependencies are installed, in a separate build phase
+
+- **What:** The image build is the only step with network. It installs requirements that are plain package names, and never copies the repo in.
+- **Why:** Lines such as `--index-url`, `git+https://` or `-r ../x` could fetch or run something unexpected.
+- **Alternatives:** `pip install .` in the build, which runs the repo's own build code with network on.
+- **What would break:** Untrusted repo code would run while the network is open.
+- **Limit:** Named packages can still run their own install scripts during the build, and that phase has network. No secrets or repo files are present.
