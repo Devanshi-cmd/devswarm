@@ -5,10 +5,13 @@ from __future__ import annotations
 import base64
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
 from github import Auth, Github, GithubException, UnknownObjectException
+from github.AuthenticatedUser import AuthenticatedUser
+from github.Repository import Repository
 
 from devswarm.config import get_secret
 
@@ -18,6 +21,8 @@ _ISSUE_URL = re.compile(
     r"(?:[/?#].*)?$"
 )
 _GH_TIMEOUT_SECONDS = 15
+_FORK_READY_ATTEMPTS = 30
+_FORK_READY_DELAY_SECONDS = 2.0
 
 
 class GitHubError(Exception):
@@ -54,11 +59,14 @@ class RepoAccess:
     can_push: bool
     size_kb: int
     branch_exists: bool
+    language: str | None = None
 
 
 class GitHubClient(Protocol):
     def get_issue(self, ref: IssueRef) -> IssueDetails: ...
     def repo_access(self, ref: IssueRef, branch: str) -> RepoAccess: ...
+    def ensure_fork(self, ref: IssueRef, default_branch: str) -> str: ...
+    def branch_exists(self, full_name: str, branch: str) -> bool: ...
     def clone_url(self, ref: IssueRef) -> str: ...
     def create_pull(self, ref: IssueRef, *, title: str, body: str, head: str, base: str) -> str: ...
 
@@ -145,7 +153,44 @@ class PyGithubClient:
             can_push=repository.permissions.push,
             size_kb=repository.size,
             branch_exists=branch_exists,
+            language=repository.language,
         )
+
+    def ensure_fork(self, ref: IssueRef, default_branch: str) -> str:
+        """Fork into this account, or reuse the existing fork, and bring it up to date."""
+        try:
+            upstream = self._github.get_repo(ref.full_name)
+            account = self._github.get_user()
+            if not isinstance(account, AuthenticatedUser):
+                raise GitHubError("forking needs an authenticated account")
+            fork = account.create_fork(upstream)
+            if not fork.fork or fork.parent.full_name.lower() != ref.full_name.lower():
+                raise GitHubError(f"{fork.full_name} exists but is not a fork of {ref.full_name}")
+            self._wait_until_ready(fork, default_branch)
+            fork.merge_upstream(default_branch)
+        except GithubException as exc:
+            raise GitHubError(f"could not fork {ref.full_name}: {_message(exc)}") from exc
+        return fork.full_name
+
+    @staticmethod
+    def _wait_until_ready(fork: Repository, branch: str) -> None:
+        # GitHub creates forks in the background, so a new one can briefly be empty.
+        for _ in range(_FORK_READY_ATTEMPTS):
+            try:
+                fork.get_branch(branch)
+                return
+            except GithubException:
+                time.sleep(_FORK_READY_DELAY_SECONDS)
+        raise GitHubError(f"{fork.full_name} was not ready in time")
+
+    def branch_exists(self, full_name: str, branch: str) -> bool:
+        try:
+            self._github.get_repo(full_name).get_branch(branch)
+        except UnknownObjectException:
+            return False
+        except GithubException as exc:
+            raise GitHubError(f"could not read {full_name}: {_message(exc)}") from exc
+        return True
 
     def clone_url(self, ref: IssueRef) -> str:
         return f"https://github.com/{ref.full_name}.git"

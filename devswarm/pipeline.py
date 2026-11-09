@@ -28,7 +28,7 @@ from devswarm.github.local import (
     prepare_local_workspace,
     push_branch,
 )
-from devswarm.github.pr import pr_title, render_pr_body
+from devswarm.github.pr import pr_title, quiet_references, render_pr_body, upstream_compare_url
 from devswarm.llm.types import LLMClient
 from devswarm.orchestrator.budget import Budget, BudgetLimits
 from devswarm.orchestrator.engine import (
@@ -173,6 +173,7 @@ def run_issue(
     options: RunOptions,
     redactor: Redactor | None = None,
     on_run_started: Callable[[str], None] | None = None,
+    fork: str | None = None,
 ) -> RunOutcome:
     """Fix a GitHub issue and open a pull request, or stop just before that if dry_run."""
     clean = redactor or Redactor()
@@ -193,16 +194,24 @@ def run_issue(
         auth = git_auth_env(token)
         run_directory = (options.work_root / run_id).resolve()
         branch = f"devswarm/issue-{ref.number}"
-        workspace = clone_for_issue(github.clone_url(ref), run_directory / "repo", branch, auth)
+        # In a fork, the code comes from and goes back to the fork. The issue stays upstream.
+        fork_owner, _, fork_repo = (fork or "").partition("/")
+        target = IssueRef(fork_owner, fork_repo, ref.number) if fork else ref
+        workspace = clone_for_issue(github.clone_url(target), run_directory / "repo", branch, auth)
         diff_path = run_directory / "changes.diff"
         body_path = run_directory / "pr_body.md"
 
         def finalizer_for(budget: Budget) -> Finalizer:
             def finalize(summary: RunSummary) -> None:
-                title = clean.text(pr_title(ref, issue.title))
-                body = clean.text(render_pr_body(ref, summary, budget.spent_usd))
+                in_fork = fork is not None
+                title = clean.text(pr_title(ref, issue.title, in_fork=in_fork))
+                body = clean.text(render_pr_body(ref, summary, budget.spent_usd, in_fork=in_fork))
+                change = summary.coder_summary
+                message = clean.text(
+                    f"{title}\n\n{quiet_references(change) if in_fork else change}"
+                )
                 try:
-                    if not commit_all(workspace, clean.text(f"{title}\n\n{summary.coder_summary}")):
+                    if not commit_all(workspace, message):
                         raise FinalizeError("there was nothing to commit")
                     diff_path.write_text(last_commit_diff(workspace) + "\n")
                     body_path.write_text(body)
@@ -211,10 +220,14 @@ def run_issue(
                     push_branch(workspace, issue.default_branch, auth)
                     pr_urls.append(
                         github.create_pull(
-                            ref, title=title, body=body, head=branch, base=issue.default_branch
+                            target, title=title, body=body, head=branch, base=issue.default_branch
                         )
                     )
                     (run_directory / "pr_url.txt").write_text(pr_urls[0])
+                    if fork is not None:
+                        (run_directory / "upstream_url.txt").write_text(
+                            upstream_compare_url(ref, fork, issue.default_branch, branch)
+                        )
                 except (WorkspaceError, GitHubError, GitCommandError) as exc:
                     raise FinalizeError(clean.text(str(exc))) from exc
 

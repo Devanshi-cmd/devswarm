@@ -168,6 +168,7 @@ class RunView:
     diff_html: Markup | None
     failure_report: str | None
     pr_url: str | None
+    upstream_url: str | None
     stages: tuple[StageView, ...]
     activity: tuple[ActivityView, ...]
 
@@ -265,6 +266,7 @@ def run_view(store: TraceStore, run_id: str, work_root: Path) -> RunView:
         diff_html=_highlight_diff(diff) if diff else None,
         failure_report=_read_artifact(work_root, run_id, "failure_report.md"),
         pr_url=pr_url.strip() if pr_url else None,
+        upstream_url=_read_artifact(work_root, run_id, "upstream_url.txt"),
         stages=stage_views(rows, run["status"]),
         activity=activity_views(store, run_id),
     )
@@ -432,6 +434,7 @@ def history(store: TraceStore, work_root: Path) -> list[HistoryItem]:
             continue
         pr_url = _read_artifact(work_root, row["id"], "pr_url.txt")
         pr_url = pr_url.strip() if pr_url else None
+        in_fork = _read_artifact(work_root, row["id"], "upstream_url.txt") is not None
         items.append(
             HistoryItem(
                 run_id=row["id"],
@@ -440,7 +443,9 @@ def history(store: TraceStore, work_root: Path) -> list[HistoryItem]:
                 title=_first_line(row["task"]),
                 status=status_view(row["status"]),
                 pr_url=pr_url,
-                pr_label=f"#{pr_url.rsplit('/', 1)[-1]}" if pr_url else None,
+                pr_label=(
+                    f"{'Fork ' if in_fork else ''}#{pr_url.rsplit('/', 1)[-1]}" if pr_url else None
+                ),
                 cost=format_usd(row["cost_usd"]),
                 cost_usd=row["cost_usd"],
                 started=format_time(row["created_at"]),
@@ -486,7 +491,7 @@ class JobView:
 
 def _job_note(job: Job, position: int) -> str:
     if job.status == "running":
-        return "The agents are working on this now." if job.run_id else "Checking the repository."
+        return "The agents are working on this now." if job.run_id else "Preparing the repository."
     if job.status == "queued":
         if position <= 1:
             return "Next in line. Starting in a moment."

@@ -111,7 +111,7 @@ Each agent's model and effort can be set separately, such as `--effort coder=hig
 
 - **Python only.** The language layer is designed so Node can be added as a new profile.
 - **The eval can't separate these systems yet.** It has 18 small tasks run once each, and every configuration scored 100%. Real repositories are larger and messier.
-- **Needs write access.** DevSwarm pushes to the issue's own repository, and has no fork workflow yet.
+- **Forks don't reach upstream automatically.** Without write access, DevSwarm opens the pull request inside a fork and gives you a link to propose it to the original project yourself.
 - **Hosted jobs run one at a time,** only on public repositories, and can't be cancelled once started.
 - **Re-running an issue** fails if `devswarm/issue-N` has diverged, because replacing it would need a force-push. Delete the branch first.
 - **Re-planning has only run in tests.** Retries after failing tests have happened in live runs, but none has needed a re-plan yet.

@@ -17,7 +17,7 @@ from test_github import REF, TOKEN, FakeGitHub, fixing_script, remote  # noqa: F
 from devswarm.dashboard.app import SubmissionLimits, create_app
 from devswarm.github.client import GitHubError, IssueRef, RepoAccess, parse_issue_url
 from devswarm.jobs.queue import JobQueue
-from devswarm.jobs.worker import Worker, preflight
+from devswarm.jobs.worker import Worker, refusal
 from devswarm.llm.mock import MockLLMClient
 from devswarm.pipeline import RunOptions
 from devswarm.storage.redact import Redactor
@@ -249,18 +249,18 @@ class WorkerGitHub(FakeGitHub):
     ("access", "expected"),
     [
         (RepoAccess(True, True, 1, False), "public"),
-        (RepoAccess(False, False, 1, False), "write access"),
         (RepoAccess(False, True, 999_999_999, False), "too large"),
-        (RepoAccess(False, True, 1, True), "already exists"),
+        (RepoAccess(False, True, 1, False, "Rust"), "only Python"),
     ],
 )
-def test_preflight_refusals(access: RepoAccess, expected: str) -> None:
-    reason = preflight(WorkerGitHub("x", access), REF)
+def test_refusals(access: RepoAccess, expected: str) -> None:
+    reason = refusal(access, REF)
     assert reason is not None and expected in reason
 
 
-def test_preflight_passes_a_good_repo() -> None:
-    assert preflight(WorkerGitHub("x"), REF) is None
+@pytest.mark.parametrize("language", ["Python", "Jupyter Notebook", None])
+def test_supported_languages(language: str | None) -> None:
+    assert refusal(RepoAccess(False, True, 1, False, language), REF) is None
 
 
 @contextmanager
@@ -333,23 +333,159 @@ def test_finished_job_page_shows_the_result_and_history_records_it(
     assert re.search(r"Pull requests opened</div><div class=\"tile-value\">1<", home)
 
 
-def test_preflight_failure_spends_nothing(env: Env, store: TraceStore, remote: Path) -> None:  # noqa: F811
+def test_refused_repo_spends_nothing_and_never_forks(
+    env: Env,
+    store: TraceStore,
+    remote: Path,  # noqa: F811
+) -> None:
     job = env.queue.create(str(REF))
-    github = WorkerGitHub(str(remote), RepoAccess(False, False, 1, False))
-    worker = make_worker(env, store, github, script=[])
-    worker.run_once()
+    github = ForkingGitHub(str(remote), RepoAccess(False, False, 1, False, "Rust"))
+    make_worker(env, store, github, script=[]).run_once()
     finished = env.queue.get(job.id)
     assert finished is not None and finished.status == "failed"
-    assert "write access" in (finished.error or "")
+    assert "only Python" in (finished.error or "")
+    assert store.list_runs() == []
+    assert github.forked == []
+
+
+def test_leftover_branch_on_own_repo_is_refused(
+    env: Env,
+    store: TraceStore,
+    remote: Path,  # noqa: F811
+) -> None:
+    job = env.queue.create(str(REF))
+    make_worker(
+        env, store, WorkerGitHub(str(remote), RepoAccess(False, True, 1, True)), script=[]
+    ).run_once()
+    finished = env.queue.get(job.id)
+    assert finished is not None and "already exists" in (finished.error or "")
+
+
+class ForkingGitHub(WorkerGitHub):
+    def __init__(
+        self, url: str, access: RepoAccess, *, fork_has_branch: bool = False, **issue: Any
+    ) -> None:
+        super().__init__(url, access, **issue)
+        self.forked: list[str] = []
+        self.fork_has_branch = fork_has_branch
+        self.pull_targets: list[str] = []
+        self.cloned: list[str] = []
+
+    def ensure_fork(self, ref: IssueRef, default_branch: str) -> str:
+        self.forked.append(default_branch)
+        return "me/calc"
+
+    def branch_exists(self, full_name: str, branch: str) -> bool:
+        return self.fork_has_branch
+
+    def clone_url(self, ref: IssueRef) -> str:
+        self.cloned.append(ref.full_name)
+        return self.url
+
+    def create_pull(self, ref: IssueRef, *, title: str, body: str, head: str, base: str) -> str:
+        self.pull_targets.append(ref.full_name)
+        return super().create_pull(ref, title=title, body=body, head=head, base=base)
+
+
+NO_ACCESS = RepoAccess(False, False, 100, False, "Python")
+
+
+def test_without_write_access_the_fix_goes_to_a_fork(
+    env: Env,
+    store: TraceStore,
+    remote: Path,  # noqa: F811
+) -> None:
+    job = env.queue.create(str(REF))
+    github = ForkingGitHub(str(remote), NO_ACCESS)
+    make_worker(env, store, github).run_once()
+
+    finished = env.queue.get(job.id)
+    assert finished is not None and finished.status == "done", finished
+    assert github.forked == ["main"]
+    assert github.cloned == ["me/calc"]
+    assert github.pull_targets == ["me/calc"]
+    assert "devswarm/issue-7" in [head.name for head in Repo(remote).heads]
+
+
+def test_fork_pull_request_never_notifies_the_original_project(
+    env: Env,
+    store: TraceStore,
+    remote: Path,  # noqa: F811
+) -> None:
+    env.queue.create(str(REF))
+    github = ForkingGitHub(str(remote), NO_ACCESS, title="Crash, thanks @maintainer see #12")
+    make_worker(env, store, github).run_once()
+
+    pull = github.pulls[0]
+    for text in (pull["title"], pull["body"]):
+        assert "@maintainer" not in text
+        assert "#12" not in text
+        assert "Closes" not in text
+        assert not re.search(r"octo/calc#7(?!`)", text)
+    assert "nothing has been sent to the original project" in pull["body"]
+    message = Repo(remote).commit("devswarm/issue-7").message
+    assert "@maintainer" not in message and "#12" not in message
+
+
+def test_job_page_offers_sending_the_fix_upstream(
+    env: Env,
+    store: TraceStore,
+    remote: Path,  # noqa: F811
+) -> None:
+    job = env.queue.create(str(REF))
+    make_worker(env, store, ForkingGitHub(str(remote), NO_ACCESS)).run_once()
+    client = env.client()
+    page = client.get(f"/jobs/{job.id}").text
+    assert "Fix ready in a fork" in page
+    assert "Send to the original project" in page
+    assert "https://github.com/octo/calc/compare/main...me:calc:devswarm/issue-7?expand=1" in page
+    assert "Fork #8" in client.get("/history").text
+
+
+def test_own_repo_has_no_upstream_link(
+    env: Env,
+    store: TraceStore,
+    remote: Path,  # noqa: F811
+) -> None:
+    job = env.queue.create(str(REF))
+    make_worker(env, store, WorkerGitHub(str(remote))).run_once()
+    page = env.client().get(f"/jobs/{job.id}").text
+    assert "Pull request opened" in page
+    assert "Send to the original project" not in page
+
+
+def test_leftover_branch_in_the_fork_is_refused_before_spending(
+    env: Env,
+    store: TraceStore,
+    remote: Path,  # noqa: F811
+) -> None:
+    job = env.queue.create(str(REF))
+    github = ForkingGitHub(str(remote), NO_ACCESS, fork_has_branch=True)
+    make_worker(env, store, github, script=[]).run_once()
+    finished = env.queue.get(job.id)
+    assert finished is not None and "already exists in me/calc" in (finished.error or "")
     assert store.list_runs() == []
 
 
-def test_failed_pipeline_marks_the_job_failed(env: Env, store: TraceStore, remote: Path) -> None:  # noqa: F811
+def test_closed_issue_never_causes_a_fork(
+    env: Env,
+    store: TraceStore,
+    remote: Path,  # noqa: F811
+) -> None:
+    job = env.queue.create(str(REF))
+    github = ForkingGitHub(str(remote), NO_ACCESS, state="closed")
+    make_worker(env, store, github, script=[]).run_once()
+    finished = env.queue.get(job.id)
+    assert finished is not None and finished.status == "failed"
+    assert github.forked == []
+
+
+def test_closed_issue_fails_the_job(env: Env, store: TraceStore, remote: Path) -> None:  # noqa: F811
     job = env.queue.create(str(REF))
     make_worker(env, store, WorkerGitHub(str(remote), state="closed"), script=[]).run_once()
     finished = env.queue.get(job.id)
     assert finished is not None and finished.status == "failed"
-    assert "closed" in (finished.error or "")
+    assert "not an open issue" in (finished.error or "")
 
 
 def test_a_crashing_job_does_not_stop_the_worker(env: Env, store: TraceStore, remote: Path) -> None:  # noqa: F811

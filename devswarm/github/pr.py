@@ -14,10 +14,32 @@ _TEST_OUTPUT_HEAD = 500
 _TEST_OUTPUT_TAIL = 2_500
 _MAX_BODY_HEAD = 50_000
 _MAX_BODY_TAIL = 10_000  # GitHub rejects bodies over 65,536 characters.
+_MENTION = re.compile(r"@(?=[A-Za-z0-9])")
+_ISSUE_NUMBER = re.compile(r"#(?=[0-9])")
 
 
-def pr_title(ref: IssueRef, issue_title: str) -> str:
+def pr_title(ref: IssueRef, issue_title: str, *, in_fork: bool = False) -> str:
+    if in_fork:
+        text = f"Fix issue {ref.number} from {ref.full_name}: {issue_title}"
+        return quiet_references(text)[:_MAX_TITLE_CHARS]
     return f"Fix #{ref.number}: {issue_title}"[:_MAX_TITLE_CHARS]
+
+
+def quiet_references(text: str) -> str:
+    """Stop GitHub from turning text into notifications on someone else's project.
+
+    A pull request in a fork that mentions @someone, or links an upstream issue, would
+    ping those people and add a note to the issue, though nobody chose to contact them.
+    """
+    text = _MENTION.sub("@\u200b", text)
+    text = _ISSUE_NUMBER.sub("#\u200b", text)
+    return text.replace("github.com/", "github.com\u200b/")
+
+
+def upstream_compare_url(ref: IssueRef, fork: str, base: str, branch: str) -> str:
+    """A link that opens GitHub's own form for proposing the fix to the original project."""
+    owner, repo = fork.split("/")
+    return f"https://github.com/{ref.full_name}/compare/{base}...{owner}:{repo}:{branch}?expand=1"
 
 
 def _fenced(text: str) -> str:
@@ -27,7 +49,9 @@ def _fenced(text: str) -> str:
     return f"{fence}text\n{text}\n{fence}"
 
 
-def render_pr_body(ref: IssueRef, summary: RunSummary, cost_usd: float) -> str:
+def render_pr_body(
+    ref: IssueRef, summary: RunSummary, cost_usd: float, *, in_fork: bool = False
+) -> str:
     plan = format_plan(summary.plan) if summary.plan else "(no plan recorded)"
 
     if summary.tests is None:
@@ -46,8 +70,7 @@ def render_pr_body(ref: IssueRef, summary: RunSummary, cost_usd: float) -> str:
         verdict = "Approved" if summary.review.verdict == "approve" else "Changes requested"
         review = f"**{verdict}.** {summary.review.summary}"
 
-    body = (
-        f"Closes #{ref.number}\n\n"
+    details = (
         f"## Plan\n\n{plan}\n\n"
         f"## Changes\n\n{summary.coder_summary}\n\n"
         f"## Test results\n\n{tests}\n\n"
@@ -58,4 +81,11 @@ def render_pr_body(ref: IssueRef, summary: RunSummary, cost_usd: float) -> str:
         f"- Total cost: ${cost_usd:.4f}\n\n"
         "---\nOpened automatically by DevSwarm.\n"
     )
-    return clip(body, _MAX_BODY_HEAD, _MAX_BODY_TAIL)
+    if in_fork:
+        # A code span, because plain owner/repo#7 would add a note to the upstream issue.
+        intro = (
+            f"Proposed fix for issue {ref.number} in `{ref.full_name}`. This pull request is "
+            "inside a fork, and nothing has been sent to the original project.\n\n"
+        )
+        return clip(intro + quiet_references(details), _MAX_BODY_HEAD, _MAX_BODY_TAIL)
+    return clip(f"Closes #{ref.number}\n\n{details}", _MAX_BODY_HEAD, _MAX_BODY_TAIL)

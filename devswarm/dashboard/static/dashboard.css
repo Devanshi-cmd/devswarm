@@ -291,3 +291,7 @@ button:hover, .button:hover { background: var(--action-hover); }
   .submit-form { grid-template-columns: minmax(0, 1fr); }
   button { width: 100%; }
 }
+
+.result-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.button-secondary { border: 1px solid var(--baseline); background: transparent; color: var(--ink); }
+.button-secondary:hover { background: var(--code); }

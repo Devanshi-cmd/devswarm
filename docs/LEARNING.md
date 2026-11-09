@@ -319,3 +319,10 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Why:** Otherwise a run spends money and only then fails at the push.
 - **Alternatives:** Letting the pipeline fail at the end.
 - **What would break:** Private code would appear on a public dashboard, because traces are public.
+
+### Forks stay quiet
+
+- **What:** Without write access, DevSwarm forks the repo and opens the pull request inside the fork. It gives you a link to propose the fix upstream yourself.
+- **Why:** This form can be used by anyone with the code. Nobody's project should receive an automated pull request that no person chose to send.
+- **Alternatives:** Opening the pull request on the original project automatically.
+- **What would break:** Maintainers could be flooded with unreviewed AI pull requests from this account. For the same reason, `@mentions` and issue links are neutralised, since GitHub would otherwise turn them into notifications.

@@ -8,7 +8,13 @@ from collections.abc import Callable
 
 from git.exc import GitCommandError
 
-from devswarm.github.client import GitHubClient, GitHubError, IssueRef, parse_issue_ref
+from devswarm.github.client import (
+    GitHubClient,
+    GitHubError,
+    IssueRef,
+    RepoAccess,
+    parse_issue_ref,
+)
 from devswarm.github.local import WorkspaceError
 from devswarm.jobs.queue import Job, JobQueue
 from devswarm.orchestrator.state_machine import State
@@ -20,21 +26,41 @@ logger = logging.getLogger(__name__)
 
 _POLL_SECONDS = 2.0
 _MAX_REPO_KB = 200_000
+_SUPPORTED_LANGUAGES = ("Python", "Jupyter Notebook")
 
 
-def preflight(github: GitHubClient, ref: IssueRef) -> str | None:
-    """Return why this issue can't be worked on, before any money is spent."""
-    access = github.repo_access(ref, f"devswarm/issue-{ref.number}")
+def refusal(access: RepoAccess, ref: IssueRef) -> str | None:
+    """Return why this repository can't be worked on, before anything is forked or spent."""
     if access.private:
         # Traces are shown publicly, so a private repo's code would be exposed.
         return "only public repositories are supported, because run details are public"
-    if not access.can_push:
-        return f"this account has no write access to {ref.full_name}"
     if access.size_kb > _MAX_REPO_KB:
         return f"{ref.full_name} is too large for this service"
-    if access.branch_exists:
-        return f"branch devswarm/issue-{ref.number} already exists; delete it to run this again"
+    # GitHub reports None for very small repositories, which the sandbox can still detect.
+    if access.language is not None and access.language not in _SUPPORTED_LANGUAGES:
+        return f"only Python repositories are supported, and {ref.full_name} is {access.language}"
     return None
+
+
+def choose_fork(github: GitHubClient, ref: IssueRef, default_branch: str) -> str | None:
+    """Work out where the fix goes. Returns a fork's name, or None to use the repo itself.
+
+    Raises GitHubError when the issue can't be worked on.
+    """
+    branch = f"devswarm/issue-{ref.number}"
+    access = github.repo_access(ref, branch)
+    reason = refusal(access, ref)
+    if reason is not None:
+        raise GitHubError(reason)
+    leftover = f"branch {branch} already exists in %s; delete it to run this again"
+    if access.can_push:
+        if access.branch_exists:
+            raise GitHubError(leftover % ref.full_name)
+        return None
+    fork = github.ensure_fork(ref, default_branch)
+    if github.branch_exists(fork, branch):
+        raise GitHubError(leftover % fork)
+    return fork
 
 
 class Worker:
@@ -86,10 +112,11 @@ class Worker:
 
     def _process(self, job: Job) -> None:
         ref = parse_issue_ref(job.issue_ref)
-        reason = preflight(self._github, ref)
-        if reason is not None:
-            self._fail(job, reason)
-            return
+        issue = self._github.get_issue(ref)
+        # Checked here as well as in run_issue, so a closed issue never causes a fork.
+        if issue.is_pull_request or issue.state != "open":
+            raise GitHubError(f"{ref} is not an open issue")
+        fork = choose_fork(self._github, ref, issue.default_branch)
 
         outcome = run_issue(
             ref=ref,
@@ -99,6 +126,7 @@ class Worker:
             options=self._options,
             redactor=self._redactor,
             on_run_started=lambda run_id: self._queue.set_run(job.id, run_id),
+            fork=fork,
         )
         if outcome.result.status is State.DONE and outcome.pr_url:
             self._queue.finish(job.id, "done", pr_url=outcome.pr_url)

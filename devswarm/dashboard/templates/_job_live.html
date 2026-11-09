@@ -4,8 +4,12 @@
 
   {% if job.pr_url %}
   <section class="card result result-good" role="status">
-    <div class="result-title"><span class="status-good"><span class="status-icon" aria-hidden="true">✓</span></span> Pull request opened</div>
-    <a class="button" href="{{ job.pr_url }}" rel="noreferrer">View the pull request</a>
+    <div class="result-title"><span class="status-good"><span class="status-icon" aria-hidden="true">✓</span></span> {% if job.run and job.run.upstream_url %}Fix ready in a fork{% else %}Pull request opened{% endif %}</div>
+    <div class="result-actions">
+      <a class="button" href="{{ job.pr_url }}" rel="noreferrer">View the pull request</a>
+      {% if job.run and job.run.upstream_url %}<a class="button button-secondary" href="{{ job.run.upstream_url }}" rel="noreferrer">Send to the original project</a>{% endif %}
+    </div>
+    {% if job.run and job.run.upstream_url %}<p class="muted">This account can't push to the original project, so the fix is in a fork. Nothing has been sent to the original project unless you choose to.</p>{% endif %}
   </section>
   {% elif job.status.kind == "critical" %}
   <section class="card result result-bad" role="alert">
