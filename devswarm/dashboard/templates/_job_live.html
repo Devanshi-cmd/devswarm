@@ -1,0 +1,25 @@
+{% from "_status.html" import status %}
+<div id="job-live"{% if job.is_active %} hx-get="/partials/jobs/{{ job.id }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <p class="breadcrumb"><a href="/">Fix an issue</a> / <a class="mono" href="{{ job.issue_url }}" rel="noreferrer">{{ job.ref }}</a></p>
+
+  {% if job.pr_url %}
+  <section class="card result result-good" role="status">
+    <div class="result-title"><span class="status-good"><span class="status-icon" aria-hidden="true">✓</span></span> Pull request opened</div>
+    <a class="button" href="{{ job.pr_url }}" rel="noreferrer">View the pull request</a>
+  </section>
+  {% elif job.status.kind == "critical" %}
+  <section class="card result result-bad" role="alert">
+    <div class="result-title"><span class="status-critical"><span class="status-icon" aria-hidden="true">✕</span></span> This issue was not fixed</div>
+    <p>{{ job.error }}</p>
+  </section>
+  {% endif %}
+
+  {% if job.run %}
+    {% with run = job.run %}{% include "_run_body.html" %}{% endwith %}
+  {% else %}
+  <div class="run-heading"><h1>{{ job.ref }}</h1>{{ status(job.status) }}</div>
+  {% if job.is_active %}
+  <section class="card waiting"><p>{{ job.note }}</p><p class="muted">This page updates by itself.</p></section>
+  {% endif %}
+  {% endif %}
+</div>

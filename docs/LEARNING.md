@@ -296,3 +296,26 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Why:** A 100% score on small tasks mostly says the tasks were easy.
 - **Alternatives:** Presenting 100% as a headline win.
 - **What would break:** Anyone who reads the tasks would stop trusting the rest of the project's claims.
+
+## Hosted submissions
+
+### The web process holds no secrets
+
+- **What:** The website only adds rows to a queue. A separate worker process holds the API key and GitHub token, and runs the jobs.
+- **Why:** The website is the part exposed to the internet. A bug there can't leak keys it doesn't have.
+- **Alternatives:** Running jobs inside the web server.
+- **What would break:** A single flaw in a public page would expose everything needed to spend money and push code.
+
+### Public viewing, gated submitting
+
+- **What:** Anyone can watch, but starting a job needs an access code, and there are limits on queue size and jobs per day.
+- **Why:** Each job spends real credits and acts with a real GitHub account.
+- **Alternatives:** An open form.
+- **What would break:** Anyone on the internet could drain the API balance, or open PRs as you.
+
+### Checks before spending
+
+- **What:** The worker confirms the repo is public, writable, not huge, and has no leftover branch before any agent runs.
+- **Why:** Otherwise a run spends money and only then fails at the push.
+- **Alternatives:** Letting the pipeline fail at the end.
+- **What would break:** Private code would appear on a public dashboard, because traces are public.

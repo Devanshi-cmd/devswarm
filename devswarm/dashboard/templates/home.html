@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}DevSwarm{% endblock %}
+{% block content %}
+<section class="card hero">
+  <h1>Fix a GitHub issue</h1>
+  <p class="hero-lead">Paste an issue link. Four AI agents plan, fix, test and review the change, then open a pull request while you watch.</p>
+  {% if error %}<p class="form-error" role="alert"><span aria-hidden="true">✕</span> {{ error }}</p>{% endif %}
+  {% if submissions_enabled %}
+  <form class="submit-form" method="post" action="/jobs">
+    <label class="field field-wide">
+      <span>GitHub issue link</span>
+      <input type="text" name="issue_url" required autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo/issues/123" value="{{ issue_url }}">
+    </label>
+    <label class="field">
+      <span>Access code</span>
+      <input type="password" name="access_code" required autocomplete="off">
+    </label>
+    <button type="submit">Start fixing</button>
+  </form>
+  <p class="muted form-note">Works with public Python repositories this service can push to. Everything a run does is shown publicly here.</p>
+  {% else %}
+  <p class="muted">Submissions are turned off on this server.</p>
+  {% endif %}
+</section>
+
+{% include "_active_jobs.html" %}
+
+<section class="tiles" aria-label="All-time summary">
+  <div class="tile"><div class="tile-label">Pull requests opened</div><div class="tile-value">{{ stats.pull_requests }}</div></div>
+  <div class="tile"><div class="tile-label">Issues attempted</div><div class="tile-value">{{ stats.attempted }}</div></div>
+  <div class="tile"><div class="tile-label">Finished successfully</div><div class="tile-value">{{ stats.success_rate }}</div></div>
+  <div class="tile"><div class="tile-label">Average cost</div><div class="tile-value">{{ stats.average_cost }}</div></div>
+</section>
+
+<section class="card">
+  <div class="section-heading">
+    <h2>Recent fixes</h2>
+    {% if recent %}<a href="/history">View all</a>{% endif %}
+  </div>
+  {% with items = recent %}{% include "_history_table.html" %}{% endwith %}
+</section>
+{% endblock %}

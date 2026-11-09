@@ -44,6 +44,8 @@ from devswarm.github.client import (
     resolve_github_token,
 )
 from devswarm.github.local import WorkspaceError
+from devswarm.jobs.queue import JobQueue
+from devswarm.jobs.worker import Worker
 from devswarm.llm.client import AnthropicLLMClient
 from devswarm.llm.mock import MockLLMClient, text_turn
 from devswarm.llm.types import LLMClient, LLMError
@@ -315,9 +317,43 @@ def dashboard(
     """Start the web dashboard."""
     database = db_path()
     hosts = [host, "localhost", *([public_host] if public_host else [])]
-    web_app = create_app(database, database.parent / "workspaces", allowed_hosts=hosts)
+    web_app = create_app(
+        database,
+        database.parent / "workspaces",
+        allowed_hosts=hosts,
+        jobs_path=database.parent / "jobs.sqlite3",
+        access_code=get_secret("DEVSWARM_ACCESS_CODE"),
+    )
     console.print(f"DevSwarm dashboard: [bold]http://{host}:{port}[/]")
     uvicorn.run(web_app, host=host, port=port, log_level="warning")
+
+
+@app.command()
+def worker() -> None:
+    """Run jobs submitted through the dashboard, one at a time."""
+    api_key = get_secret("ANTHROPIC_API_KEY")
+    if api_key is None:
+        raise _fail("ANTHROPIC_API_KEY is not set; add it to .env")
+    token = resolve_github_token()
+    if token is None:
+        raise _fail("no GitHub token: set GITHUB_TOKEN in .env, or run gh auth login")
+
+    database = db_path()
+    redactor = Redactor.from_env(extra=[token])
+    with TraceStore(database, redactor) as store:
+        job_worker = Worker(
+            queue=JobQueue(database.parent / "jobs.sqlite3"),
+            github=PyGithubClient(token),
+            token=token,
+            options=RunOptions(
+                llm=AnthropicLLMClient.from_api_key(api_key),
+                store=store,
+                work_root=database.parent / "workspaces",
+            ),
+            redactor=redactor,
+        )
+        console.print("DevSwarm worker: waiting for jobs")
+        job_worker.run_forever()
 
 
 @app.command("eval")

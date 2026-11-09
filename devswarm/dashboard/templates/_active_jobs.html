@@ -1,0 +1,17 @@
+{% from "_status.html" import status %}
+<div id="active-jobs" hx-get="/partials/active" hx-trigger="every 4s" hx-swap="outerHTML">
+{% if jobs %}
+  <section class="card">
+    <h2>In progress</h2>
+    <ul class="job-list">
+      {% for job in jobs %}
+      <li>
+        <a class="mono" href="/jobs/{{ job.id }}">{{ job.ref }}</a>
+        {{ status(job.status) }}
+        <span class="muted job-note">{{ job.note }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+</div>

@@ -8,11 +8,15 @@ import subprocess
 from dataclasses import dataclass
 from typing import Protocol
 
-from github import Auth, Github, GithubException
+from github import Auth, Github, GithubException, UnknownObjectException
 
 from devswarm.config import get_secret
 
 _ISSUE_REF = re.compile(r"^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([1-9][0-9]*)$")
+_ISSUE_URL = re.compile(
+    r"^https?://(?:www\.)?github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/issues/([1-9][0-9]*)"
+    r"(?:[/?#].*)?$"
+)
 _GH_TIMEOUT_SECONDS = 15
 
 
@@ -44,8 +48,17 @@ class IssueDetails:
     default_branch: str
 
 
+@dataclass(frozen=True)
+class RepoAccess:
+    private: bool
+    can_push: bool
+    size_kb: int
+    branch_exists: bool
+
+
 class GitHubClient(Protocol):
     def get_issue(self, ref: IssueRef) -> IssueDetails: ...
+    def repo_access(self, ref: IssueRef, branch: str) -> RepoAccess: ...
     def clone_url(self, ref: IssueRef) -> str: ...
     def create_pull(self, ref: IssueRef, *, title: str, body: str, head: str, base: str) -> str: ...
 
@@ -55,6 +68,14 @@ def parse_issue_ref(text: str) -> IssueRef:
     if match is None or set(match[1]) == {"."} or set(match[2]) == {"."}:
         raise GitHubError(f"expected an issue like owner/repo#123, got {text!r}")
     return IssueRef(match[1], match[2], int(match[3]))
+
+
+def parse_issue_url(text: str) -> IssueRef:
+    """Accept a full github.com issue link, or the short owner/repo#123 form."""
+    match = _ISSUE_URL.match(text.strip())
+    if match is None:
+        return parse_issue_ref(text.strip())
+    return parse_issue_ref(f"{match[1]}/{match[2]}#{match[3]}")
 
 
 def resolve_github_token() -> str | None:
@@ -107,6 +128,23 @@ class PyGithubClient:
             state=issue.state,
             is_pull_request=issue.pull_request is not None,
             default_branch=repository.default_branch,
+        )
+
+    def repo_access(self, ref: IssueRef, branch: str) -> RepoAccess:
+        try:
+            repository = self._github.get_repo(ref.full_name)
+            try:
+                repository.get_branch(branch)
+                branch_exists = True
+            except UnknownObjectException:
+                branch_exists = False
+        except GithubException as exc:
+            raise GitHubError(f"could not read {ref.full_name}: {_message(exc)}") from exc
+        return RepoAccess(
+            private=repository.private,
+            can_push=repository.permissions.push,
+            size_kb=repository.size,
+            branch_exists=branch_exists,
         )
 
     def clone_url(self, ref: IssueRef) -> str:

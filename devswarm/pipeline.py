@@ -172,6 +172,7 @@ def run_issue(
     dry_run: bool,
     options: RunOptions,
     redactor: Redactor | None = None,
+    on_run_started: Callable[[str], None] | None = None,
 ) -> RunOutcome:
     """Fix a GitHub issue and open a pull request, or stop just before that if dry_run."""
     clean = redactor or Redactor()
@@ -185,6 +186,8 @@ def run_issue(
     store = options.store
     run_id = store.start_run(task, repo=str(ref), config=options.config.model_dump())
     pr_urls: list[str] = []
+    if on_run_started:
+        on_run_started(run_id)
 
     with _records_crash(store, run_id):
         auth = git_auth_env(token)

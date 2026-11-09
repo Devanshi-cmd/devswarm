@@ -75,7 +75,7 @@ def finished_run(seed: Seed, task: str = "division by zero") -> str:
 
 def test_empty_list_when_no_database_exists(tmp_path: Path) -> None:
     client = TestClient(create_app(tmp_path / "missing.sqlite3", tmp_path, ["testserver"]))
-    response = client.get("/")
+    response = client.get("/runs")
     assert response.status_code == 200
     assert "No runs yet" in response.text
     assert not (tmp_path / "missing.sqlite3").exists()
@@ -83,7 +83,7 @@ def test_empty_list_when_no_database_exists(tmp_path: Path) -> None:
 
 def test_run_list_shows_runs(seed: Seed) -> None:
     run_id = finished_run(seed)
-    page = seed.client().get("/").text
+    page = seed.client().get("/runs").text
     assert run_id in page
     assert "division by zero" in page
     assert "Done" in page
@@ -92,7 +92,7 @@ def test_run_list_shows_runs(seed: Seed) -> None:
 def test_list_polls_only_while_something_runs(seed: Seed) -> None:
     run_id = seed.store.start_run("still going")
     client = seed.client()
-    assert 'hx-trigger="every 3s"' in client.get("/").text
+    assert 'hx-trigger="every 3s"' in client.get("/runs").text
     seed.store.finish_run(run_id, "done")
     assert "hx-trigger" not in client.get("/partials/runs").text
 
@@ -220,12 +220,12 @@ def test_untrusted_text_is_escaped_everywhere(seed: Seed) -> None:
     (seed.work_root / run_id / "failure_report.md").write_text(XSS)
 
     client = seed.client()
-    for url in ("/", f"/runs/{run_id}", f"/partials/steps/{step}"):
+    for url in ("/runs", "/", "/history", f"/runs/{run_id}", f"/partials/steps/{step}"):
         assert "<script>alert" not in client.get(url).text
 
 
 def test_security_headers_are_set(seed: Seed) -> None:
-    headers = seed.client().get("/").headers
+    headers = seed.client().get("/runs").headers
     policy = headers["content-security-policy"]
     assert "script-src 'self'" in policy
     assert "unsafe-inline" not in policy

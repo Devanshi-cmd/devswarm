@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}History · DevSwarm{% endblock %}
+{% block content %}
+<h1>History</h1>
+<section class="tiles" aria-label="All-time summary">
+  <div class="tile"><div class="tile-label">Pull requests opened</div><div class="tile-value">{{ stats.pull_requests }}</div></div>
+  <div class="tile"><div class="tile-label">Issues attempted</div><div class="tile-value">{{ stats.attempted }}</div></div>
+  <div class="tile"><div class="tile-label">Finished successfully</div><div class="tile-value">{{ stats.success_rate }}</div></div>
+  <div class="tile"><div class="tile-label">Total cost</div><div class="tile-value">{{ stats.total_cost }}</div></div>
+</section>
+<section class="card">
+  {% include "_history_table.html" %}
+</section>
+{% endblock %}

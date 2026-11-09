@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import DiffLexer
 
 from devswarm.dashboard.charts import BarChart, Datum, Series, horizontal_bars
+from devswarm.jobs.queue import Job, JobQueue
 from devswarm.sandbox.output import clip
 from devswarm.storage.trace import TraceStore
 
@@ -127,6 +129,21 @@ class TableRow:
 
 
 @dataclass(frozen=True)
+class StageView:
+    label: str
+    state: str  # done, active, failed or pending.
+    icon: str
+
+
+@dataclass(frozen=True)
+class ActivityView:
+    agent: str
+    tool: str
+    detail: str
+    is_error: bool
+
+
+@dataclass(frozen=True)
 class RunView:
     id: str
     title: str
@@ -151,6 +168,8 @@ class RunView:
     diff_html: Markup | None
     failure_report: str | None
     pr_url: str | None
+    stages: tuple[StageView, ...]
+    activity: tuple[ActivityView, ...]
 
 
 def _step_view(row: Row) -> StepView:
@@ -246,6 +265,8 @@ def run_view(store: TraceStore, run_id: str, work_root: Path) -> RunView:
         diff_html=_highlight_diff(diff) if diff else None,
         failure_report=_read_artifact(work_root, run_id, "failure_report.md"),
         pr_url=pr_url.strip() if pr_url else None,
+        stages=stage_views(rows, run["status"]),
+        activity=activity_views(store, run_id),
     )
 
 
@@ -344,3 +365,156 @@ def step_turns(store: TraceStore, step_id: int) -> list[TurnView]:
             )
         )
     return turns
+
+
+_STAGES = (
+    ("Plan", {"planner"}),
+    ("Code", {"coder"}),
+    ("Test", {"tester", "verify"}),
+    ("Review", {"reviewer"}),
+    ("Finish", set[str]()),
+)
+_STAGE_ICONS = {"done": "✓", "active": "●", "failed": "✕", "pending": "○"}
+_ACTIVITY_ITEMS = 10
+_ACTIVITY_DETAIL_CHARS = 100
+_DETAIL_FIELDS = ("path", "cmd", "pattern")
+_ISSUE_REPO = re.compile(r"^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$")
+
+
+def stage_views(rows: list[Row], status: str) -> tuple[StageView, ...]:
+    latest = rows[-1]["agent"] if rows else None
+    current = next((i for i, (_, agents) in enumerate(_STAGES) if latest in agents), -1)
+
+    def state(index: int) -> str:
+        if status == "done" or index < current:
+            return "done"
+        if index == current:
+            return "active" if status == "running" else "failed"
+        return "pending"
+
+    return tuple(
+        StageView(label, state(index), _STAGE_ICONS[state(index)])
+        for index, (label, _) in enumerate(_STAGES)
+    )
+
+
+def activity_views(store: TraceStore, run_id: str) -> tuple[ActivityView, ...]:
+    items = []
+    for row in store.recent_tool_calls(run_id, _ACTIVITY_ITEMS):
+        arguments = json.loads(row["input_json"])
+        detail = next((str(arguments[key]) for key in _DETAIL_FIELDS if key in arguments), "")
+        if len(detail) > _ACTIVITY_DETAIL_CHARS:
+            detail = detail[:_ACTIVITY_DETAIL_CHARS] + "..."
+        items.append(ActivityView(row["agent"], row["tool_name"], detail, bool(row["is_error"])))
+    return tuple(items)
+
+
+@dataclass(frozen=True)
+class HistoryItem:
+    run_id: str
+    issue_ref: str
+    issue_url: str
+    title: str
+    status: StatusView
+    pr_url: str | None
+    pr_label: str | None
+    cost: str
+    cost_usd: float
+    started: str
+
+
+def history(store: TraceStore, work_root: Path) -> list[HistoryItem]:
+    """Runs that came from a GitHub issue, newest first."""
+    items = []
+    for row in store.list_runs():
+        match = _ISSUE_REPO.match(row["repo"] or "")
+        if match is None:
+            continue
+        pr_url = _read_artifact(work_root, row["id"], "pr_url.txt")
+        pr_url = pr_url.strip() if pr_url else None
+        items.append(
+            HistoryItem(
+                run_id=row["id"],
+                issue_ref=row["repo"],
+                issue_url=f"https://github.com/{match[1]}/issues/{match[2]}",
+                title=_first_line(row["task"]),
+                status=status_view(row["status"]),
+                pr_url=pr_url,
+                pr_label=f"#{pr_url.rsplit('/', 1)[-1]}" if pr_url else None,
+                cost=format_usd(row["cost_usd"]),
+                cost_usd=row["cost_usd"],
+                started=format_time(row["created_at"]),
+            )
+        )
+    return items
+
+
+@dataclass(frozen=True)
+class HistoryStats:
+    pull_requests: int
+    attempted: int
+    success_rate: str
+    average_cost: str
+    total_cost: str
+
+
+def history_stats(items: list[HistoryItem]) -> HistoryStats:
+    finished = [item for item in items if item.status.kind != "running"]
+    succeeded = sum(item.status.kind == "good" for item in finished)
+    total = sum(item.cost_usd for item in items)
+    return HistoryStats(
+        pull_requests=sum(item.pr_url is not None for item in items),
+        attempted=len(items),
+        success_rate=f"{succeeded / len(finished):.0%}" if finished else "-",
+        average_cost=format_usd(total / len(items)) if items else "-",
+        total_cost=format_usd(total),
+    )
+
+
+@dataclass(frozen=True)
+class JobView:
+    id: str
+    ref: str
+    issue_url: str
+    status: StatusView
+    is_active: bool
+    note: str
+    error: str | None
+    pr_url: str | None
+    run: RunView | None
+
+
+def _job_note(job: Job, position: int) -> str:
+    if job.status == "running":
+        return "The agents are working on this now." if job.run_id else "Checking the repository."
+    if job.status == "queued":
+        if position <= 1:
+            return "Next in line. Starting in a moment."
+        return f"Waiting for {position - 1} job(s) ahead of this one."
+    return ""
+
+
+def _job_status(job: Job) -> StatusView:
+    return (
+        StatusView("Queued", "running", "○") if job.status == "queued" else status_view(job.status)
+    )
+
+
+def job_view(job: Job, queue: JobQueue, store: TraceStore | None, work_root: Path) -> JobView:
+    match = _ISSUE_REPO.match(job.issue_ref)
+    assert match is not None  # Only validated references are ever queued.
+    return JobView(
+        id=job.id,
+        ref=job.issue_ref,
+        issue_url=f"https://github.com/{match[1]}/issues/{match[2]}",
+        status=_job_status(job),
+        is_active=job.is_active,
+        note=_job_note(job, queue.position(job)),
+        error=job.error,
+        pr_url=job.pr_url,
+        run=run_view(store, job.run_id, work_root) if store and job.run_id else None,
+    )
+
+
+def active_jobs(queue: JobQueue) -> list[JobView]:
+    return [job_view(job, queue, None, Path()) for job in queue.active()]

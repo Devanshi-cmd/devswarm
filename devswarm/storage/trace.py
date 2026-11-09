@@ -299,6 +299,14 @@ class TraceStore:
             (run_id,),
         ).fetchall()
 
+    def recent_tool_calls(self, run_id: str, limit: int) -> list[sqlite3.Row]:
+        """The latest tool calls in a run, newest first."""
+        return self._db.execute(
+            "SELECT t.*, s.agent AS agent FROM tool_calls t JOIN steps s ON s.id = t.step_id"
+            " WHERE t.run_id = ? ORDER BY t.id DESC LIMIT ?",
+            (run_id, limit),
+        ).fetchall()
+
     def llm_calls(self, step_id: int) -> list[sqlite3.Row]:
         return self._db.execute(
             "SELECT * FROM llm_calls WHERE step_id = ? ORDER BY id", (step_id,)

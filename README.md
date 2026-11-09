@@ -4,6 +4,8 @@
 
 **See a real result:** [this pull request](https://github.com/Devanshi-cmd/devswarm-demo/pull/2) was produced from [this issue](https://github.com/Devanshi-cmd/devswarm-demo/issues/1), end to end, for $0.0037.
 
+**Try the live dashboard:** [devswarm.165-99-53-30.sslip.io](https://devswarm.165-99-53-30.sslip.io) shows every fix, and lets anyone with the access code submit an issue and watch the agents work.
+
 ![The DevSwarm dashboard showing a finished run with cost and token charts](docs/images/dashboard.png)
 
 ## Highlights
@@ -84,7 +86,8 @@ uv run devswarm run --issue owner/repo#123
 |---|---|
 | `devswarm run` | Fix a local task or a GitHub issue |
 | `devswarm eval` | Score configurations against the eval tasks |
-| `devswarm dashboard` | Open the local web UI |
+| `devswarm dashboard` | Open the web UI: submit issues, watch runs, browse history |
+| `devswarm worker` | Run the jobs submitted through the web UI |
 | `devswarm report <run_id>` | Print a Markdown summary of a run |
 | `devswarm runs` | List recorded runs |
 | `devswarm sandbox-check` | Verify each isolation guarantee on a live container |
@@ -102,12 +105,14 @@ Each agent's model and effort can be set separately, such as `--effort coder=hig
 | Damaging a branch | Only `devswarm/*` branches can be pushed, never with force |
 | Leaked secrets | Redacted from logs, traces, commits and PR bodies. The token never touches `.git/config` |
 | Runaway cost | Cost, token, time and iteration limits, checked before every call |
+| Abuse of the public form | Submitting needs an access code, with queue and daily limits. The website holds no API key or GitHub token; only the worker does |
 
 ## Known limitations
 
 - **Python only.** The language layer is designed so Node can be added as a new profile.
 - **The eval can't separate these systems yet.** It has 18 small tasks run once each, and every configuration scored 100%. Real repositories are larger and messier.
 - **Needs write access.** DevSwarm pushes to the issue's own repository, and has no fork workflow yet.
+- **Hosted jobs run one at a time,** only on public repositories, and can't be cancelled once started.
 - **Re-running an issue** fails if `devswarm/issue-N` has diverged, because replacing it would need a force-push. Delete the branch first.
 - **Re-planning has only run in tests.** Retries after failing tests have happened in live runs, but none has needed a re-plan yet.
 - **Prompt injection is reduced, not solved.** The sandbox limits the damage if an agent is fooled.

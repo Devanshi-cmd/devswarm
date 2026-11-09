@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ run.id }} · DevSwarm{% endblock %}
 {% block content %}
-<p class="breadcrumb"><a href="/">Runs</a> / <span class="mono">{{ run.id }}</span></p>
+<p class="breadcrumb"><a href="/runs">All runs</a> / <span class="mono">{{ run.id }}</span></p>
 {% include "_run_live.html" %}
 {% endblock %}

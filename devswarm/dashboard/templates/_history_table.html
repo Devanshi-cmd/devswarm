@@ -1,0 +1,24 @@
+{% from "_status.html" import status %}
+{% if items %}
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Issue</th><th>Result</th><th>Pull request</th><th class="num">Cost</th><th>When</th><th><span class="sr-only">Details</span></th></tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td class="task-cell"><a class="mono" href="{{ item.issue_url }}" rel="noreferrer">{{ item.issue_ref }}</a><div class="issue-title">{{ item.title }}</div></td>
+        <td>{{ status(item.status) }}</td>
+        <td>{% if item.pr_url %}<a href="{{ item.pr_url }}" rel="noreferrer">{{ item.pr_label }}</a>{% else %}<span class="muted">None</span>{% endif %}</td>
+        <td class="num">{{ item.cost }}</td>
+        <td class="nowrap muted">{{ item.started }}</td>
+        <td class="nowrap"><a href="/runs/{{ item.run_id }}">Details</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="muted">No fixes yet. Submit an issue link to start the first one.</p>
+{% endif %}
