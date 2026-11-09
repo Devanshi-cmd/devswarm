@@ -1,0 +1,7 @@
+[
+  {
+    "file": "money.py",
+    "old": "    total = sum(weights)\n    return [round(amount_cents * weight / total) for weight in weights]\n",
+    "new": "    total = sum(weights)\n    if total <= 0:\n        raise ValueError(\"weights must add up to more than zero\")\n    sign = -1 if amount_cents < 0 else 1\n    amount = abs(amount_cents)\n    shares = [amount * weight // total for weight in weights]\n    by_remainder = sorted(\n        range(len(weights)), key=lambda index: (-(amount * weights[index] % total), index)\n    )\n    for index in by_remainder[: amount - sum(shares)]:\n        shares[index] += 1\n    return [sign * share for share in shares]\n"
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "file": "orders.py",
+    "old": "        for sku, qty in lines.items():\n            self.stock.reserve(sku, qty)\n",
+    "new": "        reserved = []\n        try:\n            for sku, qty in lines.items():\n                self.stock.reserve(sku, qty)\n                reserved.append((sku, qty))\n        except OutOfStock:\n            for sku, qty in reserved:\n                self.stock.release(sku, qty)\n            raise\n"
+  },
+  {
+    "file": "orders.py",
+    "old": "from stock import Stock\n",
+    "new": "from stock import OutOfStock, Stock\n"
+  },
+  {
+    "file": "orders.py",
+    "old": "        self._orders[order_id][\"status\"] = \"shipped\"\n",
+    "new": "        order = self._get(order_id)\n        if order[\"status\"] == \"cancelled\":\n            raise OrderError(f\"order {order_id} is cancelled\")\n        order[\"status\"] = \"shipped\"\n"
+  },
+  {
+    "file": "orders.py",
+    "old": "        order = self._orders[order_id]\n        for sku, qty in order[\"lines\"].items():\n            self.stock.release(sku, qty)\n        order[\"status\"] = \"cancelled\"\n",
+    "new": "        order = self._get(order_id)\n        if order[\"status\"] == \"cancelled\":\n            return\n        if order[\"status\"] == \"shipped\":\n            raise OrderError(f\"order {order_id} has shipped\")\n        for sku, qty in order[\"lines\"].items():\n            self.stock.release(sku, qty)\n        order[\"status\"] = \"cancelled\"\n\n    def _get(self, order_id: int) -> dict:\n        if order_id not in self._orders:\n            raise OrderError(f\"unknown order {order_id}\")\n        return self._orders[order_id]\n"
+  }
+]

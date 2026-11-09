@@ -1,0 +1,7 @@
+[
+  {
+    "file": "template.py",
+    "old": "import re\n\n\ndef render(template: str, context: dict) -> str:\n    return re.sub(r\"\\{\\{(\\w+)\\}\\}\", lambda match: str(context[match[1]]), template)\n",
+    "new": "import re\n\n\nclass MissingVariable(KeyError):\n    pass\n\n\ndef _lookup(name: str, context: dict) -> object:\n    value: object = context\n    for part in name.split(\".\"):\n        if not isinstance(value, dict) or part not in value:\n            raise MissingVariable(name)\n        value = value[part]\n    return value\n\n\ndef render(template: str, context: dict) -> str:\n    def replace(match: re.Match) -> str:\n        if match[1] is None:\n            return \"{{\"\n        value = _lookup(match[1], context)\n        return \"\" if value is None else str(value)\n\n    return re.sub(r\"\\\\\\{\\{|\\{\\{\\s*([\\w.]+)\\s*\\}\\}\", replace, template)\n"
+  }
+]

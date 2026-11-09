@@ -287,3 +287,12 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Alternatives:** Inheriting the environment.
 - **What would break:** Surprise API charges, and a key exposed to a process that runs shell commands on the host.
 - **Limit:** The baseline runs on the host, so nothing physically stops it from reading the hidden tests. Its transcript is checked, and any sign of looking counts as a failure.
+
+## M8: Polish
+
+### Report the tie
+
+- **What:** The README says every configuration solved all 18 tasks, and that this doesn't show any of them is more capable.
+- **Why:** A 100% score on small tasks mostly says the tasks were easy.
+- **Alternatives:** Presenting 100% as a headline win.
+- **What would break:** Anyone who reads the tasks would stop trusting the rest of the project's claims.

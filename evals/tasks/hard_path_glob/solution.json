@@ -1,0 +1,7 @@
+[
+  {
+    "file": "pathmatch.py",
+    "old": "import fnmatch\n\n\ndef match(pattern: str, path: str) -> bool:\n    return fnmatch.fnmatchcase(path, pattern)\n",
+    "new": "import re\n\n\ndef _translate(pattern: str) -> str:\n    output = \"\"\n    index = 0\n    while index < len(pattern):\n        if pattern.startswith(\"**/\", index):\n            output += \"(?:[^/]+/)*\"\n            index += 3\n        elif pattern.startswith(\"/**\", index) and index + 3 == len(pattern):\n            output += \"/.+\"\n            index += 3\n        elif pattern[index] == \"*\":\n            output += \"[^/]*\"\n            index += 1\n        elif pattern[index] == \"?\":\n            output += \"[^/]\"\n            index += 1\n        elif pattern[index] == \"[\" and \"]\" in pattern[index + 1 :]:\n            end = pattern.index(\"]\", index + 1)\n            body = pattern[index + 1 : end]\n            if body.startswith(\"!\"):\n                output += \"[^/\" + re.escape(body[1:]) + \"]\"\n            else:\n                output += \"[\" + re.escape(body) + \"]\"\n            index = end + 1\n        else:\n            output += re.escape(pattern[index])\n            index += 1\n    return output\n\n\ndef match(pattern: str, path: str) -> bool:\n    return re.fullmatch(_translate(pattern), path) is not None\n"
+  }
+]
