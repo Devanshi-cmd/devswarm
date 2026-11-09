@@ -1,0 +1,7 @@
+[
+  {
+    "file": "intervals.py",
+    "old": "    for start, end in intervals:\n        if merged and start < merged[-1][1]:\n            merged[-1] = (merged[-1][0], end)\n",
+    "new": "    for start, end in sorted(intervals):\n        if merged and start <= merged[-1][1]:\n            merged[-1] = (merged[-1][0], max(merged[-1][1], end))\n"
+  }
+]

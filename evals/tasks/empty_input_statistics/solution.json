@@ -1,0 +1,12 @@
+[
+  {
+    "file": "stats.py",
+    "old": "    return sum(values) / len(values)",
+    "new": "    if not values:\n        return 0.0\n    return sum(values) / len(values)"
+  },
+  {
+    "file": "stats.py",
+    "old": "    ordered = sorted(values)\n",
+    "new": "    if not values:\n        return 0.0\n    ordered = sorted(values)\n"
+  }
+]

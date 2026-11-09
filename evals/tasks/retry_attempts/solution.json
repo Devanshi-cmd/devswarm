@@ -1,0 +1,7 @@
+[
+  {
+    "file": "retrying.py",
+    "old": "    for _ in range(attempts - 1):\n        try:\n            return fn()\n        except Exception:\n            pass\n    return None\n",
+    "new": "    last_error = None\n    for _ in range(attempts):\n        try:\n            return fn()\n        except Exception as error:\n            last_error = error\n    raise last_error\n"
+  }
+]

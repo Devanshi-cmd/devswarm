@@ -1,0 +1,12 @@
+[
+  {
+    "file": "lru.py",
+    "old": "        return self._data.get(key)\n",
+    "new": "        if key not in self._data:\n            return None\n        self._data.move_to_end(key)\n        return self._data[key]\n"
+  },
+  {
+    "file": "lru.py",
+    "old": "        if len(self._data) >= self.capacity:\n            self._data.popitem(last=False)\n        self._data[key] = value\n",
+    "new": "        if key in self._data:\n            self._data.move_to_end(key)\n        elif len(self._data) >= self.capacity:\n            self._data.popitem(last=False)\n        self._data[key] = value\n"
+  }
+]

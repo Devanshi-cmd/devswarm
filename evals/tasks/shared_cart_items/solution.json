@@ -1,0 +1,7 @@
+[
+  {
+    "file": "cart.py",
+    "old": "    def __init__(self, items=[]):\n        self.items = items\n",
+    "new": "    def __init__(self, items=None):\n        self.items = list(items) if items is not None else []\n"
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {
+    "file": "pager.py",
+    "old": "    return total // size",
+    "new": "    return (total + size - 1) // size"
+  }
+]

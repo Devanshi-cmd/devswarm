@@ -99,8 +99,14 @@ def test_cli_run_rejects_bad_options(args: list[str]) -> None:
     assert "not built yet" not in result.output
 
 
-@pytest.mark.parametrize("command", ["eval"])
-def test_cli_stubs_say_when_they_arrive(command: str) -> None:
-    result = runner.invoke(app, [command])
+def test_cli_eval_rejects_unknown_config() -> None:
+    result = runner.invoke(app, ["eval", "--config", "sonnet-api"])
     assert result.exit_code == 1
-    assert "not built yet" in result.output
+    assert "unknown configuration" in result.output
+
+
+def test_cli_eval_needs_a_key_for_devswarm_configs() -> None:
+    tasks = Path(__file__).parent.parent / "evals" / "tasks"
+    result = runner.invoke(app, ["eval", "--tasks-dir", str(tasks)])
+    assert result.exit_code == 1
+    assert "ANTHROPIC_API_KEY" in result.output

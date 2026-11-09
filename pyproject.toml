@@ -45,6 +45,8 @@ python_classes = ["Test_*"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Eval tasks contain deliberate bugs, such as a mutable default argument.
+extend-exclude = ["evals/tasks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

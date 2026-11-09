@@ -1,0 +1,12 @@
+[
+  {
+    "file": "settings.py",
+    "old": "    return {**base, **override}\n",
+    "new": "    merged = copy.deepcopy(base)\n    for key, value in override.items():\n        if isinstance(value, dict) and isinstance(merged.get(key), dict):\n            merged[key] = merge_config(merged[key], value)\n        else:\n            merged[key] = copy.deepcopy(value)\n    return merged\n"
+  },
+  {
+    "file": "settings.py",
+    "old": "def merge_config",
+    "new": "import copy\n\n\ndef merge_config"
+  }
+]

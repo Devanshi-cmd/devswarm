@@ -256,3 +256,34 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Why:** Geometry can be unit-tested, and the CSP can forbid inline styles, because SVG attributes aren't styles.
 - **Alternatives:** A JavaScript chart library.
 - **What would break:** Another dependency, a weaker CSP, and no way to test the numbers without a browser.
+
+## M7: Evaluation
+
+### Hidden tests decide, and they arrive last
+
+- **What:** Agents only ever receive `repo/`. Hidden tests join the code in a fresh container after the agents have stopped.
+- **Why:** If a system could see the tests, the score would measure copying, not solving.
+- **Alternatives:** Scoring with the visible tests.
+- **What would break:** Agents write some of the visible tests themselves, so they could pass by testing their own bug.
+
+### The scorer ignores the repo's pytest config
+
+- **What:** Scoring runs with `-c /dev/null` and `--noconftest`.
+- **Why:** An agent can edit any file in its copy, including ones that change how pytest runs.
+- **Alternatives:** Plain `pytest`.
+- **What would break:** A `conftest.py` that skips everything would count as solved.
+
+### Every task proves itself
+
+- **What:** Tests confirm that each task's visible tests pass on the buggy code, its hidden tests fail on it, and a reference fix passes both.
+- **Why:** A broken task silently distorts every solve rate.
+- **Alternatives:** Trusting tasks as written.
+- **What would break:** An impossible task, or one already solved, would look like a result about the agents.
+
+### Claude Code runs with an empty environment
+
+- **What:** Only `HOME`, `PATH`, `LANG` and `TERM` are passed to the baseline.
+- **Why:** With `ANTHROPIC_API_KEY` set it would call Sonnet through the API. Removing it uses the machine's login, and keeps secrets away from its Bash tool.
+- **Alternatives:** Inheriting the environment.
+- **What would break:** Surprise API charges, and a key exposed to a process that runs shell commands on the host.
+- **Limit:** The baseline runs on the host, so nothing physically stops it from reading the hidden tests. Its transcript is checked, and any sign of looking counts as a failure.

@@ -1,0 +1,7 @@
+[
+  {
+    "file": "csvline.py",
+    "old": "def parse_line(line: str) -> list[str]:\n    return line.split(\",\")\n",
+    "new": "import csv\n\n\ndef parse_line(line: str) -> list[str]:\n    return next(csv.reader([line]))\n"
+  }
+]

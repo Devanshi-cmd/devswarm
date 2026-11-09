@@ -28,6 +28,15 @@ from devswarm.config import (
     parse_effort_overrides,
 )
 from devswarm.dashboard.app import create_app
+from devswarm.evaluation.harness import (
+    CONFIGS,
+    HiddenTestScorer,
+    TaskOutcome,
+    render_report,
+    run_eval,
+)
+from devswarm.evaluation.runners import ClaudeCodeRunner, DevSwarmRunner, TaskRunner
+from devswarm.evaluation.tasks import TaskError, load_tasks
 from devswarm.github.client import (
     GitHubError,
     PyGithubClient,
@@ -310,6 +319,68 @@ def dashboard(
 
 
 @app.command("eval")
-def eval_command() -> None:
-    """Run the evaluation suite (arrives in M7)."""
-    raise _fail("the eval harness is not built yet; it arrives in M7")
+def eval_command(
+    config: Annotated[
+        list[str] | None,
+        typer.Option(help=f"Configuration to run, repeatable. Choose from: {', '.join(CONFIGS)}."),
+    ] = None,
+    task: Annotated[list[str] | None, typer.Option(help="Only run this task.")] = None,
+    tasks_dir: Annotated[Path, typer.Option(help="Where the tasks live.")] = Path("evals/tasks"),
+    max_api_usd: Annotated[
+        float, typer.Option(help="Stop API-billed runs once they have spent this much.")
+    ] = 3.00,
+    output: Annotated[Path, typer.Option(help="Where to write the report.")] = Path(
+        ".devswarm/eval_report.md"
+    ),
+) -> None:
+    """Run the eval tasks and report the solve rate for each configuration."""
+    names = config or ["devswarm-haiku"]
+    unknown = [name for name in names if name not in CONFIGS]
+    if unknown:
+        raise _fail(f"unknown configuration: {', '.join(unknown)}")
+    selected = [CONFIGS[name] for name in names]
+    try:
+        tasks = load_tasks(tasks_dir, only=task or ())
+    except TaskError as exc:
+        raise _fail(str(exc)) from exc
+
+    api_configs = [item.name for item in selected if item.kind == "devswarm"]
+    api_key = get_secret("ANTHROPIC_API_KEY")
+    if api_configs and api_key is None:
+        raise _fail("ANTHROPIC_API_KEY is not set; add it to .env")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with _store() as store:
+        runners: dict[str, TaskRunner] = {}
+        for item in selected:
+            if item.kind == "claude_code":
+                runners[item.name] = ClaudeCodeRunner()
+                continue
+            assert api_key is not None
+            runners[item.name] = DevSwarmRunner(
+                RunOptions(
+                    llm=AnthropicLLMClient.from_api_key(api_key),
+                    store=store,
+                    work_root=db_path().parent / "workspaces",
+                ),
+                MachineConfig(reviewer_enabled=item.reviewer_enabled),
+            )
+
+        def on_outcome(outcome: TaskOutcome, everything: list[TaskOutcome]) -> None:
+            # Written after every task, so an interrupted eval still leaves a report.
+            output.write_text(render_report(everything, selected))
+            console.print(
+                f"{outcome.task_id} [cyan]{outcome.config}[/] {outcome.status} "
+                f"${outcome.cost_usd:.4f} {outcome.seconds:.0f}s"
+            )
+
+        outcomes = run_eval(
+            tasks,
+            runners,
+            HiddenTestScorer(),
+            max_api_usd=max_api_usd,
+            api_configs=api_configs,
+            on_outcome=on_outcome,
+        )
+    console.print(Markdown(render_report(outcomes, selected)))
+    console.print(f"Report written to {output}")

@@ -1,0 +1,7 @@
+[
+  {
+    "file": "checkout.py",
+    "old": "    undiscounted = sum(prices)\n    subtotal = sum(apply_discount(price, coupon_percent) for price in prices)\n    subtotal = apply_discount(subtotal, coupon_percent)\n    return round(subtotal + undiscounted * TAX_RATE, 2)\n",
+    "new": "    subtotal = sum(apply_discount(price, coupon_percent) for price in prices)\n    return round(subtotal * (1 + TAX_RATE), 2)\n"
+  }
+]

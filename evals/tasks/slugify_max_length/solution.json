@@ -1,0 +1,7 @@
+[
+  {
+    "file": "slug.py",
+    "old": "def slugify(text: str) -> str:\n    return re.sub(r\"[^a-z0-9]+\", \"-\", text.lower()).strip(\"-\")\n",
+    "new": "def slugify(text: str, max_length: int | None = None) -> str:\n    slug = re.sub(r\"[^a-z0-9]+\", \"-\", text.lower()).strip(\"-\")\n    if max_length is None or len(slug) <= max_length:\n        return slug\n    head = slug[: max_length + 1]\n    if \"-\" not in head:\n        return slug[:max_length]\n    return head.rsplit(\"-\", 1)[0].rstrip(\"-\")\n"
+  }
+]
