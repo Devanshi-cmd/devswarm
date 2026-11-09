@@ -26,13 +26,19 @@ from devswarm.config import (
     parse_agent_overrides,
     parse_effort_overrides,
 )
+from devswarm.github.client import (
+    GitHubError,
+    PyGithubClient,
+    parse_issue_ref,
+    resolve_github_token,
+)
 from devswarm.github.local import WorkspaceError
 from devswarm.llm.client import AnthropicLLMClient
 from devswarm.llm.mock import MockLLMClient, text_turn
 from devswarm.llm.types import LLMClient, LLMError
 from devswarm.orchestrator.budget import BudgetLimits
 from devswarm.orchestrator.state_machine import MachineConfig, State
-from devswarm.pipeline import run_locally
+from devswarm.pipeline import RunOptions, run_issue, run_locally
 from devswarm.sandbox.base import SandboxError
 from devswarm.sandbox.check import run_checks
 from devswarm.smoke import run_smoke
@@ -91,7 +97,7 @@ def run(
     max_iterations: Annotated[int, typer.Option(help="How many times the Coder may run.")] = 5,
     reviewer: Annotated[bool, typer.Option(help="Use the Reviewer agent.")] = True,
 ) -> None:
-    """Fix a task in a local repository and leave the result on a branch."""
+    """Fix a GitHub issue with a pull request, or a local task with a branch."""
     if bool(issue) == bool(repo and task):
         raise _fail("use either --issue, or --repo together with --task")
     try:
@@ -108,30 +114,50 @@ def run(
         agent = config.for_agent(name)
         table.add_row(name, agent.model, agent.effort, str(agent.max_turns))
     console.print(table)
-    if issue or repo is None or task is None:
-        raise _fail(f"the GitHub flow is not built yet (dry_run={dry_run}); it arrives in M5")
+    issue_ref = None
+    token = None
+    if issue:
+        try:
+            issue_ref = parse_issue_ref(issue)
+        except GitHubError as exc:
+            raise _fail(str(exc)) from exc
 
     api_key = get_secret("ANTHROPIC_API_KEY")
     if api_key is None:
         raise _fail("ANTHROPIC_API_KEY is not set; add it to .env")
+    if issue_ref is not None:
+        token = resolve_github_token()
+        if token is None:
+            raise _fail("no GitHub token: set GITHUB_TOKEN in .env, or run gh auth login")
 
-    redactor = Redactor.from_env()
-    with _store() as store:
+    redactor = Redactor.from_env(extra=[token] if token else [])
+    with TraceStore(db_path(), redactor) as store:
+        options = RunOptions(
+            llm=AnthropicLLMClient.from_api_key(api_key),
+            store=store,
+            work_root=db_path().parent / "workspaces",
+            config=config,
+            limits=BudgetLimits(max_usd=max_usd),
+            machine=MachineConfig(max_iterations=max_iterations, reviewer_enabled=reviewer),
+            on_event=_event_printer(redactor),
+            on_progress=lambda message: console.rule(f"[bold]{escape(message)}"),
+        )
         try:
-            outcome = run_locally(
-                task=task,
-                repo=Path(repo),
-                llm=AnthropicLLMClient.from_api_key(api_key),
-                store=store,
-                work_root=db_path().parent / "workspaces",
-                config=config,
-                limits=BudgetLimits(max_usd=max_usd),
-                machine=MachineConfig(max_iterations=max_iterations, reviewer_enabled=reviewer),
-                on_event=_event_printer(redactor),
-                on_progress=lambda message: console.rule(f"[bold]{escape(message)}"),
-            )
-        except (SandboxError, WorkspaceError, GitCommandError) as exc:
-            raise _fail(str(exc)) from exc
+            if issue_ref is not None and token is not None:
+                outcome = run_issue(
+                    ref=issue_ref,
+                    github=PyGithubClient(token),
+                    token=token,
+                    dry_run=dry_run,
+                    options=options,
+                    redactor=redactor,
+                )
+            elif repo is not None and task is not None:
+                outcome = run_locally(task=task, repo=Path(repo), options=options)
+            else:
+                raise _fail("use either --issue, or --repo together with --task")
+        except (SandboxError, WorkspaceError, GitHubError, GitCommandError) as exc:
+            raise _fail(escape(redactor.text(str(exc)))) from exc
         cost = store.get_run(outcome.run_id)["cost_usd"]
 
     result = outcome.result
@@ -150,6 +176,12 @@ def run(
         summary.add_row("Diff", str(outcome.diff_path))
     if outcome.failure_report_path:
         summary.add_row("Failure report", str(outcome.failure_report_path))
+    if outcome.pr_body_path:
+        summary.add_row("PR body", str(outcome.pr_body_path))
+    if outcome.pr_url:
+        summary.add_row("Pull request", outcome.pr_url)
+    elif dry_run and result.status is State.DONE:
+        summary.add_row("Pull request", "skipped (dry run)")
     console.print(summary)
     if result.status is not State.DONE:
         raise _fail(escape(redactor.text(result.reason or "the run failed")))

@@ -68,8 +68,14 @@ def test_cli_run_shows_resolved_config() -> None:
         app, ["run", "--issue", "a/b#1", "--model", "reviewer=claude-sonnet-5-5"]
     )
     assert "claude-sonnet-5-5" in result.output
-    assert "not built yet" in result.output
+    assert "ANTHROPIC_API_KEY" in result.output
     assert result.exit_code == 1
+
+
+def test_cli_run_rejects_a_bad_issue_reference() -> None:
+    result = runner.invoke(app, ["run", "--issue", "not-an-issue"])
+    assert result.exit_code == 1
+    assert "owner/repo#123" in result.output
 
 
 def test_cli_run_needs_a_key() -> None:

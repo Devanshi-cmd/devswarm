@@ -13,7 +13,7 @@ from git import Repo
 
 from devswarm.llm.mock import MockLLMClient, ScriptedTurn, tool_turn
 from devswarm.orchestrator.state_machine import MachineConfig, State
-from devswarm.pipeline import LocalRunOutcome, run_locally
+from devswarm.pipeline import RunOptions, RunOutcome, run_locally
 from devswarm.storage.redact import Redactor
 from devswarm.storage.trace import TraceStore
 
@@ -95,16 +95,18 @@ def run_with_fake(
     script: list[Any],
     sandbox: FakeSandbox,
     machine: MachineConfig | None = None,
-) -> LocalRunOutcome:
+) -> RunOutcome:
     return run_locally(
         task="division by zero crashes",
         repo=repo,
-        llm=MockLLMClient(script),
-        store=store,
-        work_root=tmp_path / "work",
-        machine=machine,
-        sandbox_factory=lambda path, image: _context(sandbox),
-        image_resolver=lambda path: "image",
+        options=RunOptions(
+            llm=MockLLMClient(script),
+            store=store,
+            work_root=tmp_path / "work",
+            machine=machine,
+            sandbox_factory=lambda path, image: _context(sandbox),
+            image_resolver=lambda path: "image",
+        ),
     )
 
 
@@ -123,9 +125,7 @@ def test_all_agents_fix_the_example_in_a_real_container(
     outcome = run_locally(
         task="division by zero crashes",
         repo=repo,
-        llm=MockLLMClient(script),
-        store=store,
-        work_root=tmp_path / "work",
+        options=RunOptions(llm=MockLLMClient(script), store=store, work_root=tmp_path / "work"),
     )
     assert outcome.result.status is State.DONE, outcome.result.reason
     assert outcome.result.summary.tests is not None and outcome.result.summary.tests.passed

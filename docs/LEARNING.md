@@ -196,3 +196,33 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Why:** The new plan should not inherit the approach that just failed.
 - **Alternatives:** Keeping the partial changes.
 - **What would break:** The next attempt tends to patch the same broken approach.
+
+## M5: GitHub
+
+### The token only ever lives in a process environment
+
+- **What:** git receives the token through `GIT_CONFIG_*` variables for each command. The clone URL carries no credentials.
+- **Why:** Agents can read `.git` inside the sandbox, and anything on a command line is visible to `ps`.
+- **Alternatives:** `https://token@github.com/...`, the usual approach.
+- **What would break:** The token would be saved in `.git/config`, where a prompt-injected agent could read it.
+
+### One function can write to a remote, and it refuses by default
+
+- **What:** `push_branch` only pushes `devswarm/*` branches, never the default branch, `main` or `master`, and never with force.
+- **Why:** One small function is easy to audit and test. Agents have no network, so this is the only route out.
+- **Alternatives:** Relying on GitHub branch protection.
+- **What would break:** Many repos have no branch protection, so a bug could overwrite someone's main branch.
+
+### A re-run fails instead of overwriting
+
+- **What:** A second run on the same issue fails if the remote branch has diverged.
+- **Why:** Replacing it would need a force-push, which is banned.
+- **Alternatives:** A unique branch name per run, which the spec rules out with `devswarm/issue-123`.
+- **What would break:** Silently replacing a branch could destroy someone's review work.
+
+### Secrets are removed from everything published
+
+- **What:** PR titles, bodies and commit messages pass through `Redactor`.
+- **Why:** These come from issue text and model output, and a PR on a public repo is permanent.
+- **Alternatives:** Trusting the model not to include them.
+- **What would break:** A secret pasted in an issue could be repeated into a public PR.

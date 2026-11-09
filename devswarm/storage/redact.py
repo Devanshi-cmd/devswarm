@@ -31,13 +31,14 @@ class Redactor:
         self._secrets = sorted(unique, key=len, reverse=True)
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> Redactor:
+    def from_env(cls, env: Mapping[str, str] | None = None, extra: Iterable[str] = ()) -> Redactor:
         source = os.environ if env is None else env
-        return cls(
+        found = [
             value
             for name, value in source.items()
             if _SECRET_ENV_NAME.search(name.upper()) and not is_placeholder(value)
-        )
+        ]
+        return cls([*found, *extra])
 
     def text(self, value: str) -> str:
         for secret in self._secrets:

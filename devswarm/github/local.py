@@ -25,6 +25,8 @@ _COPY_IGNORED = shutil.ignore_patterns(
 _BOT_NAME = "DevSwarm"
 _BOT_EMAIL = "devswarm@users.noreply.github.com"
 _SLUG_LENGTH = 40
+_PROTECTED_BRANCHES = frozenset({"main", "master"})
+_PUSHABLE_PREFIX = "devswarm/"
 
 
 class WorkspaceError(Exception):
@@ -143,3 +145,29 @@ class GitRepoState:
     def reset_to_base(self) -> None:
         self._repo.git.reset("--hard", "HEAD")
         self._repo.git.clean("-fdx")
+
+
+def clone_for_issue(url: str, target: Path, branch: str, auth: dict[str, str]) -> LocalWorkspace:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    repo = Repo.clone_from(url, str(target), env=auth)
+    repo.git.checkout("-b", branch)
+    return LocalWorkspace(path=target, branch=branch, source=None)
+
+
+def push_branch(workspace: LocalWorkspace, default_branch: str, auth: dict[str, str]) -> None:
+    """Push the run's branch. The only code path in DevSwarm that writes to a remote."""
+    branch = workspace.branch
+    if (
+        branch in _PROTECTED_BRANCHES
+        or branch == default_branch
+        or not branch.startswith(_PUSHABLE_PREFIX)
+    ):
+        raise WorkspaceError(f"refusing to push to branch {branch!r}")
+    repo = Repo(workspace.path)
+    # No "+" in the refspec and no --force: a push that isn't a fast-forward just fails.
+    refspec = f"refs/heads/{branch}:refs/heads/{branch}"
+    try:
+        with repo.git.custom_environment(**auth):
+            repo.git.push("--no-verify", "origin", refspec)
+    except GitCommandError as exc:
+        raise WorkspaceError(f"push failed: {exc.stderr.strip()}") from exc
