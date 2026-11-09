@@ -99,7 +99,7 @@ def test_cli_run_rejects_bad_options(args: list[str]) -> None:
     assert "not built yet" not in result.output
 
 
-@pytest.mark.parametrize("command", ["dashboard", "eval"])
+@pytest.mark.parametrize("command", ["eval"])
 def test_cli_stubs_say_when_they_arrive(command: str) -> None:
     result = runner.invoke(app, [command])
     assert result.exit_code == 1

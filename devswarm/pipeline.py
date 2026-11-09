@@ -211,6 +211,7 @@ def run_issue(
                             ref, title=title, body=body, head=branch, base=issue.default_branch
                         )
                     )
+                    (run_directory / "pr_url.txt").write_text(pr_urls[0])
                 except (WorkspaceError, GitHubError, GitCommandError) as exc:
                     raise FinalizeError(clean.text(str(exc))) from exc
 

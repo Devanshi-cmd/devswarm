@@ -226,3 +226,33 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Why:** These come from issue text and model output, and a PR on a public repo is permanent.
 - **Alternatives:** Trusting the model not to include them.
 - **What would break:** A secret pasted in an issue could be repeated into a public PR.
+
+## M6: Dashboard
+
+### Server-rendered HTML with HTMX
+
+- **What:** FastAPI renders Jinja templates. HTMX refreshes parts of the page while a run is active, and loads a step's detail only when it is opened.
+- **Why:** There is no build step or front-end state, and every page comes straight from the database.
+- **Alternatives:** React with a JSON API.
+- **What would break:** Two codebases and a build pipeline for what is a read-only view.
+
+### The dashboard treats traces as hostile
+
+- **What:** Autoescaping, a strict Content-Security-Policy, a local copy of HTMX, and rejection of unknown `Host` headers.
+- **Why:** Traces contain issue text and model output. A crafted issue could otherwise run script in your browser.
+- **Alternatives:** Trusting the data because the dashboard is local.
+- **What would break:** "Local" does not stop a web page you visit from reaching `127.0.0.1`. DNS rebinding could read your traces without the `Host` check.
+
+### Read-only database connection
+
+- **What:** The dashboard opens SQLite with `mode=ro`.
+- **Why:** It can then never change a trace, and it can't block a run that is writing.
+- **Alternatives:** Reusing the normal connection.
+- **What would break:** A dashboard bug could alter the record of what happened.
+
+### Chart geometry is plain Python
+
+- **What:** `charts.py` computes bar paths, and templates only draw them.
+- **Why:** Geometry can be unit-tested, and the CSP can forbid inline styles, because SVG attributes aren't styles.
+- **Alternatives:** A JavaScript chart library.
+- **What would break:** Another dependency, a weaker CSP, and no way to test the numbers without a browser.

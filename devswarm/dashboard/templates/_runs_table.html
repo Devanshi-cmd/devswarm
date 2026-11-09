@@ -1,0 +1,29 @@
+{% from "_status.html" import status %}
+<div id="runs"{% if polling %} hx-get="/partials/runs" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+{% if runs %}
+  <div class="table-scroll card">
+    <table>
+      <thead>
+        <tr><th>Run</th><th>Status</th><th>Task</th><th class="num">LLM calls</th><th class="num">Cost</th><th>Started</th></tr>
+      </thead>
+      <tbody>
+      {% for run in runs %}
+        <tr>
+          <td><a class="mono" href="/runs/{{ run.id }}">{{ run.id }}</a></td>
+          <td>{{ status(run.status) }}</td>
+          <td class="task-cell">{{ run.title }}</td>
+          <td class="num">{{ run.llm_calls }}</td>
+          <td class="num">{{ run.cost }}</td>
+          <td class="nowrap muted">{{ run.started }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="card empty">
+    <p>No runs yet.</p>
+    <p class="muted">Start one with <code>devswarm run --repo ./path --task "..."</code></p>
+  </div>
+{% endif %}
+</div>

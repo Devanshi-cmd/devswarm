@@ -220,8 +220,18 @@ def test_rerun_never_force_pushes(remote: Path, store: TraceStore, tmp_path: Pat
     run(FakeGitHub(str(remote)), store, tmp_path / "first")
     before = Repo(remote).commit("devswarm/issue-7").hexsha
 
-    outcome = run(FakeGitHub(str(remote)), store, tmp_path / "second")
+    # A different change, because an identical commit in the same second would be a no-op push.
+    other_fix = {**FIX, "new_str": FIX["new_str"].replace("division by zero", "cannot divide")}
+    script = [
+        plan_turn(),
+        tool_turn("edit_file", other_fix),
+        coder_finish(),
+        tester_finish(),
+        approve(),
+    ]
+    outcome = run(FakeGitHub(str(remote)), store, tmp_path / "second", script)
     assert outcome.result.status is State.FAILED
+    assert "push failed" in (outcome.result.reason or "")
     assert Repo(remote).commit("devswarm/issue-7").hexsha == before
 
 

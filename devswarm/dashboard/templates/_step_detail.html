@@ -1,0 +1,29 @@
+{% for turn in turns %}
+<article class="turn">
+  <header class="turn-header">
+    <strong>Turn {{ turn.number }}</strong>
+    <span class="muted">{{ turn.model }} · {{ turn.effort }} effort · {{ turn.usage }} · {{ turn.cost }} · {{ turn.latency_ms }} ms{% if turn.stop_reason %} · stopped: {{ turn.stop_reason }}{% endif %}{% if turn.retries %} · {{ turn.retries }} retries{% endif %}</span>
+  </header>
+  {% if turn.error %}<p class="callout">{{ turn.error }}</p>{% endif %}
+  {% if turn.system_prompt %}
+  <details class="block"><summary>System prompt</summary><pre class="output">{{ turn.system_prompt }}</pre></details>
+  {% endif %}
+  {% for block in turn.prompts %}
+  <details class="block"><summary>{{ block.label }}</summary><pre class="output">{{ block.text }}</pre></details>
+  {% endfor %}
+  {% for block in turn.responses %}
+  <details class="block"><summary>{{ block.label }}</summary><pre class="output">{{ block.text }}</pre></details>
+  {% endfor %}
+  {% for tool in turn.tool_calls %}
+  <details class="block{% if tool.is_error %} block-error{% endif %}">
+    <summary><span class="mono">{{ tool.name }}</span>{% if tool.is_error %} <span class="status status-critical"><span class="status-icon" aria-hidden="true">✕</span>Error</span>{% endif %} <span class="muted">{{ tool.latency_ms }} ms</span></summary>
+    <div class="block-label">Input</div>
+    <pre class="output">{{ tool.input }}</pre>
+    <div class="block-label">Output</div>
+    <pre class="output">{{ tool.output }}</pre>
+  </details>
+  {% endfor %}
+</article>
+{% else %}
+<p class="muted">No LLM calls in this step.</p>
+{% endfor %}

@@ -1,0 +1,26 @@
+{% macro bar_chart(chart) %}
+<figure class="chart-figure">
+  <figcaption>{{ chart.title }}</figcaption>
+  {% if chart.legend %}
+  <ul class="legend">
+    {% for item in chart.legend %}<li><span class="swatch {{ item.css_class }}" aria-hidden="true"></span>{{ item.label }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <div class="chart-scroll">
+    <svg class="chart" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img" aria-label="{{ chart.title }}. Values are in the table below.">
+      {% for row in chart.rows %}
+      <g class="chart-row">
+        <title>{{ row.tooltip }}</title>
+        <rect class="chart-hit" x="0" y="{{ row.top }}" width="{{ chart.width }}" height="{{ chart.row_height }}"></rect>
+        <text class="chart-label" x="{{ chart.label_right }}" y="{{ row.middle }}" text-anchor="end" dominant-baseline="central">{{ row.label }}</text>
+        {% for segment in row.segments %}
+        <path class="{{ segment.css_class }}" d="{{ segment.path }}"><title>{{ segment.tooltip }}</title></path>
+        {% endfor %}
+        <text class="chart-value" x="{{ '%.2f' | format(row.value_x) }}" y="{{ row.middle }}" dominant-baseline="central">{{ row.value }}</text>
+      </g>
+      {% endfor %}
+      <line class="chart-baseline" x1="{{ chart.baseline_x }}" x2="{{ chart.baseline_x }}" y1="0" y2="{{ chart.height }}"></line>
+    </svg>
+  </div>
+</figure>
+{% endmacro %}

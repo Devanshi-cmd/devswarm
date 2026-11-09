@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import uvicorn
 from git.exc import GitCommandError
 from rich.console import Console
 from rich.logging import RichHandler
@@ -26,6 +27,7 @@ from devswarm.config import (
     parse_agent_overrides,
     parse_effort_overrides,
 )
+from devswarm.dashboard.app import create_app
 from devswarm.github.client import (
     GitHubError,
     PyGithubClient,
@@ -294,9 +296,17 @@ def sandbox_check(
 
 
 @app.command()
-def dashboard() -> None:
-    """Start the web dashboard (arrives in M6)."""
-    raise _fail("the dashboard is not built yet; it arrives in M6")
+def dashboard(
+    host: Annotated[str, typer.Option(help="Address to listen on.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8420,
+) -> None:
+    """Start the local web dashboard."""
+    database = db_path()
+    web_app = create_app(
+        database, database.parent / "workspaces", allowed_hosts=[host, "localhost"]
+    )
+    console.print(f"DevSwarm dashboard: [bold]http://{host}:{port}[/]")
+    uvicorn.run(web_app, host=host, port=port, log_level="warning")
 
 
 @app.command("eval")

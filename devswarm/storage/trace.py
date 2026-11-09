@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
+from urllib.parse import quote
 
 from devswarm.llm.types import LLMError, LLMRequest, LLMResponse, to_jsonable
 from devswarm.storage.redact import Redactor
@@ -96,14 +97,20 @@ def _now() -> str:
 
 
 class TraceStore:
-    def __init__(self, path: Path, redactor: Redactor | None = None) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(path)
-        self._db.row_factory = sqlite3.Row
-        self._db.execute("PRAGMA foreign_keys = ON")
-        # WAL lets the dashboard read a run while the pipeline is still writing it.
-        self._db.execute("PRAGMA journal_mode = WAL")
-        self._db.executescript(_SCHEMA)
+    def __init__(
+        self, path: Path, redactor: Redactor | None = None, *, read_only: bool = False
+    ) -> None:
+        if read_only:
+            self._db = sqlite3.connect(f"file:{quote(str(path.resolve()))}?mode=ro", uri=True)
+            self._db.row_factory = sqlite3.Row
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._db = sqlite3.connect(path)
+            self._db.row_factory = sqlite3.Row
+            self._db.execute("PRAGMA foreign_keys = ON")
+            # WAL lets the dashboard read a run while the pipeline is still writing it.
+            self._db.execute("PRAGMA journal_mode = WAL")
+            self._db.executescript(_SCHEMA)
         self._redactor = redactor or Redactor()
 
     def __enter__(self) -> Self:
@@ -280,6 +287,15 @@ class TraceStore:
             f"SELECT s.*, {_USAGE_COLUMNS} FROM steps s"
             " LEFT JOIN llm_calls l ON l.step_id = s.id"
             " WHERE s.run_id = ? GROUP BY s.id ORDER BY s.id",
+            (run_id,),
+        ).fetchall()
+
+    def usage_by_agent(self, run_id: str) -> list[sqlite3.Row]:
+        """Totals per agent, in the order the agents first ran. Omits steps with no LLM calls."""
+        return self._db.execute(
+            f"SELECT s.agent AS agent, MIN(s.id) AS first_step, {_USAGE_COLUMNS} FROM steps s"
+            " JOIN llm_calls l ON l.step_id = s.id"
+            " WHERE s.run_id = ? GROUP BY s.agent ORDER BY first_step",
             (run_id,),
         ).fetchall()
 
