@@ -308,12 +308,14 @@ def sandbox_check(
 def dashboard(
     host: Annotated[str, typer.Option(help="Address to listen on.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to listen on.")] = 8420,
+    public_host: Annotated[
+        str | None, typer.Option(help="Public hostname, when served behind a reverse proxy.")
+    ] = None,
 ) -> None:
-    """Start the local web dashboard."""
+    """Start the web dashboard."""
     database = db_path()
-    web_app = create_app(
-        database, database.parent / "workspaces", allowed_hosts=[host, "localhost"]
-    )
+    hosts = [host, "localhost", *([public_host] if public_host else [])]
+    web_app = create_app(database, database.parent / "workspaces", allowed_hosts=hosts)
     console.print(f"DevSwarm dashboard: [bold]http://{host}:{port}[/]")
     uvicorn.run(web_app, host=host, port=port, log_level="warning")
 
