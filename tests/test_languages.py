@@ -343,3 +343,48 @@ def test_compile_errors_are_never_excused() -> None:
     runner = SandboxTestRunner(sandbox, RustProfile())
     runner.record_baseline()
     assert not runner.run().passed
+
+
+def test_rust_runs_every_test_program_even_after_a_failure() -> None:
+    assert "--no-fail-fast" in RustProfile().test_command()
+
+
+def test_a_hanging_rust_test_program_is_killed_by_the_runner() -> None:
+    assert "RUNNER=" in RustProfile().dockerfile()
+    assert "timeout" in RustProfile().dockerfile()
+
+
+def test_rust_killed_test_program_has_a_fingerprint() -> None:
+    output = "error: 2 targets failed:\n    `--bin agent-browser`\n    `--test page_headers_cli`\n"
+    assert RustProfile().failure_fingerprints(output) == [
+        "target:--bin agent-browser|failed",
+        "target:--test page_headers_cli|failed",
+    ]
+
+
+def test_new_hanging_program_is_not_excused_by_earlier_failures() -> None:
+    before = "failures:\n    a::one\n\nerror: 1 target failed:\n    `--bin app`\n"
+    after = before.replace(
+        "1 target failed:\n    `--bin app`", "2 targets failed:\n    `--bin app`\n    `--test new`"
+    )
+    sandbox = FakeSandbox(result(exit_code=101, stderr=before), result(exit_code=101, stderr=after))
+    runner = SandboxTestRunner(sandbox, RustProfile())
+    runner.record_baseline()
+    report = runner.run()
+    assert not report.passed
+    assert "target:--test new|failed" in report.fingerprints
+
+
+def test_failures_long_before_the_end_of_the_output_are_still_seen() -> None:
+    noisy = "x" * 300_000 + "\ntest a::new ... FAILED\n" + "y" * 20_000
+    sandbox = BigOutputSandbox(noisy)
+    report = SandboxTestRunner(sandbox, RustProfile()).run()
+    assert "a::new|assertion" in report.fingerprints
+
+
+class BigOutputSandbox:
+    def __init__(self, stdout: str) -> None:
+        self.stdout = stdout
+
+    def exec(self, argv: object, *, timeout: int, tail_chars: int = 8_000) -> CommandResult:
+        return result(exit_code=101, stdout=self.stdout[-tail_chars:])

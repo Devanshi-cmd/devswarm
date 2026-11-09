@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from devswarm.sandbox.base import Sandbox
 from devswarm.sandbox.images import LanguageProfile
 
+# Large, because failures are read from this text. Cutting it short could hide a new
+# failure, which would then look like one that was already there.
+_REPORT_TAIL_CHARS = 400_000
+
 # Only failures with a specific identity can be matched against the starting point.
 # A build that doesn't compile, or a suite that hangs, never counts as already-known.
 _UNMATCHABLE_PREFIXES = ("exit:", "compile|", "timeout")
@@ -49,7 +53,9 @@ class SandboxTestRunner:
 
     def run(self) -> TestReport:
         result = self._sandbox.exec(
-            self._profile.test_command(), timeout=self._profile.test_timeout
+            self._profile.test_command(),
+            timeout=self._profile.test_timeout,
+            tail_chars=_REPORT_TAIL_CHARS,
         )
         output = result.stdout + result.stderr
         if result.exit_code == 0:

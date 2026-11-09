@@ -61,6 +61,8 @@ _NODE_TEST_FAILURE = re.compile(r"^\s*not ok \d+ - (?P<test>.+?)\s*$", re.MULTIL
 _JS_DURATION = re.compile(r"\s+\d+(?:\.\d+)?\s*m?s$")
 _RUST_TEST_FAILURE = re.compile(r"^test (?P<test>\S+) \.\.\. FAILED$", re.MULTILINE)
 _RUST_FAILURE_SUMMARY = re.compile(r"^failures:\n((?:    \S+\n)+)", re.MULTILINE)
+_RUST_FAILED_TARGETS = re.compile(r"^error: \d+ targets? failed:\n((?:    .+\n?)+)", re.MULTILINE)
+_RUST_TARGET_NAME = re.compile(r"`(--[^`]+)`")
 _RUST_COMPILE_ERROR = re.compile(r"^error\[(?P<code>E\d+)\]", re.MULTILINE)
 
 
@@ -356,6 +358,7 @@ def _cargo_stub_paths(manifest: Path) -> set[str]:
 
 
 _CARGO_BUILD_JOBS = 3
+_RUST_TEST_RUNNER = "timeout -k 5 180"
 
 
 @dataclass(frozen=True)
@@ -365,9 +368,11 @@ class RustProfile:
     source_suffixes: tuple[str, ...] = (".rs",)
     github_languages: tuple[str, ...] = ("Rust",)
     # Compilers need room, but this machine is shared.
-    limits: SandboxLimits = SandboxLimits(cpus="4", memory="4g", pids=1_024, tmpfs_size="1g")
-    test_timeout: int = 1_200
-    max_seconds: float = 2_700
+    limits: SandboxLimits = SandboxLimits(
+        cpus="4", memory="4g", pids=1_024, tmpfs_size="1g", lifetime_seconds=10_800
+    )
+    test_timeout: int = 2_400
+    max_seconds: float = 7_200
     generated_paths: tuple[str, ...] = (_RUST_TARGET_DIRECTORY,)
     manifest: str = "Cargo.toml"
 
@@ -421,6 +426,10 @@ class RustProfile:
             # binary and test binary can each need gigabytes, too much to build together.
             f"ENV CARGO_TARGET_DIR=/workspace/{_RUST_TARGET_DIRECTORY} CARGO_NET_OFFLINE=true"
             " CARGO_BUILD_JOBS=1\n"
+            # Cargo starts each test program through this, so one that hangs is killed and
+            # reported as failed while the programs after it still get to run.
+            f'ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="{_RUST_TEST_RUNNER}"\n'
+            f'ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="{_RUST_TEST_RUNNER}"\n'
         )
 
     def setup_command(self) -> list[str]:
@@ -435,7 +444,18 @@ class RustProfile:
         ]
 
     def test_command(self) -> list[str]:
-        return ["cargo", "test", "--manifest-path", self.manifest, "--offline", "--color", "never"]
+        # --no-fail-fast: cargo otherwise stops at the first failing test program, so one
+        # failure that was already there would hide every test after it.
+        return [
+            "cargo",
+            "test",
+            "--no-fail-fast",
+            "--manifest-path",
+            self.manifest,
+            "--offline",
+            "--color",
+            "never",
+        ]
 
     def is_test_path(self, path: str) -> bool:
         return "tests" in PurePosixPath(path).parts[:-1]
@@ -446,6 +466,9 @@ class RustProfile:
         for block in _RUST_FAILURE_SUMMARY.findall(output):
             found |= {f"{line.strip()}|assertion" for line in block.splitlines()}
         found |= {f"compile|{match['code']}" for match in _RUST_COMPILE_ERROR.finditer(output)}
+        # The only trace of a test program that was killed for hanging.
+        for block in _RUST_FAILED_TARGETS.findall(output):
+            found |= {f"target:{name}|failed" for name in _RUST_TARGET_NAME.findall(block)}
         return sorted(found)
 
     def project_notes(self) -> str:
