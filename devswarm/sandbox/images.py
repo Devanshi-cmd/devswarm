@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import tomllib
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
 from devswarm.sandbox.base import SandboxError
@@ -25,6 +25,9 @@ _REQUIREMENTS_NAME = "requirements.devswarm.txt"
 # something other than a named package from the index.
 _PLAIN_REQUIREMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-]*(\[[^\]]*\])?\s*([<>=!~;].*)?$")
 
+_FAILURE_LINE = re.compile(r"^(?:FAILED|ERROR) (?P<test>.+?)(?: - (?P<message>.*))?$", re.MULTILINE)
+_ERROR_TYPE = re.compile(r"^([\w.]*(?:Error|Exception|Warning|Exit|Interrupt))\b")
+
 
 class LanguageProfile(Protocol):
     """Adding Node later means one more class like PythonProfile, nothing else."""
@@ -36,6 +39,8 @@ class LanguageProfile(Protocol):
     def dependencies(self, repo: Path) -> list[str]: ...
     def dockerfile(self) -> str: ...
     def test_command(self) -> list[str]: ...
+    def is_test_path(self, path: str) -> bool: ...
+    def failure_fingerprints(self, output: str) -> list[str]: ...
 
 
 def _plain_requirements(lines: list[str]) -> list[str]:
@@ -84,6 +89,27 @@ class PythonProfile:
 
     def test_command(self) -> list[str]:
         return ["pytest", "-q"]
+
+    def is_test_path(self, path: str) -> bool:
+        pure = PurePosixPath(path)
+        name = pure.name
+        return (
+            any(part in ("test", "tests") for part in pure.parts[:-1])
+            or name.startswith("test_")
+            or name.endswith("_test.py")
+            or name == "conftest.py"
+        )
+
+    def failure_fingerprints(self, output: str) -> list[str]:
+        """Identify each failure by test and error type from pytest's summary.
+
+        Full messages differ between runs (addresses, timings), which would hide a repeat.
+        """
+        fingerprints = []
+        for match in _FAILURE_LINE.finditer(output):
+            kind = _ERROR_TYPE.match(match["message"] or "")
+            fingerprints.append(f"{match['test']}|{kind[1] if kind else 'assertion'}")
+        return sorted(set(fingerprints))
 
     def dockerfile(self) -> str:
         # Tools first: this layer stays cached across every repository and dependency change.

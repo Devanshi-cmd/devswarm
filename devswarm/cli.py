@@ -31,7 +31,8 @@ from devswarm.llm.client import AnthropicLLMClient
 from devswarm.llm.mock import MockLLMClient, text_turn
 from devswarm.llm.types import LLMClient, LLMError
 from devswarm.orchestrator.budget import BudgetLimits
-from devswarm.pipeline import run_coder_locally
+from devswarm.orchestrator.state_machine import MachineConfig, State
+from devswarm.pipeline import run_locally
 from devswarm.sandbox.base import SandboxError
 from devswarm.sandbox.check import run_checks
 from devswarm.smoke import run_smoke
@@ -87,6 +88,8 @@ def run(
         list[str] | None, typer.Option(help="Per-agent effort, e.g. coder=high.")
     ] = None,
     max_usd: Annotated[float, typer.Option(help="Stop the run at this cost.")] = 1.00,
+    max_iterations: Annotated[int, typer.Option(help="How many times the Coder may run.")] = 5,
+    reviewer: Annotated[bool, typer.Option(help="Use the Reviewer agent.")] = True,
 ) -> None:
     """Fix a task in a local repository and leave the result on a branch."""
     if bool(issue) == bool(repo and task):
@@ -112,9 +115,10 @@ def run(
     if api_key is None:
         raise _fail("ANTHROPIC_API_KEY is not set; add it to .env")
 
+    redactor = Redactor.from_env()
     with _store() as store:
         try:
-            outcome = run_coder_locally(
+            outcome = run_locally(
                 task=task,
                 repo=Path(repo),
                 llm=AnthropicLLMClient.from_api_key(api_key),
@@ -122,24 +126,33 @@ def run(
                 work_root=db_path().parent / "workspaces",
                 config=config,
                 limits=BudgetLimits(max_usd=max_usd),
-                on_event=_event_printer(Redactor.from_env()),
+                machine=MachineConfig(max_iterations=max_iterations, reviewer_enabled=reviewer),
+                on_event=_event_printer(redactor),
+                on_progress=lambda message: console.rule(f"[bold]{escape(message)}"),
             )
         except (SandboxError, WorkspaceError, GitCommandError) as exc:
             raise _fail(str(exc)) from exc
         cost = store.get_run(outcome.run_id)["cost_usd"]
 
+    result = outcome.result
+    tests = result.summary.tests
+    review = result.summary.review
     summary = Table(title=f"Run {outcome.run_id}", show_header=False)
-    summary.add_row("Status", outcome.status)
-    summary.add_row("Tests", "passed" if outcome.tests_passed else "not passed")
-    summary.add_row("Agent turns", str(outcome.coder.turns))
+    summary.add_row("Status", result.status.value)
+    summary.add_row("Tests", "not run" if tests is None else "passed" if tests.passed else "failed")
+    summary.add_row("Reviewer", review.verdict if review else "did not review")
+    summary.add_row("Iterations", str(result.summary.iterations))
+    summary.add_row("Re-plans", str(result.summary.replans))
     summary.add_row("Cost", f"${cost:.6f}")
     summary.add_row("Branch", outcome.workspace.branch)
     summary.add_row("Working copy", str(outcome.workspace.path))
     if outcome.diff_path:
         summary.add_row("Diff", str(outcome.diff_path))
+    if outcome.failure_report_path:
+        summary.add_row("Failure report", str(outcome.failure_report_path))
     console.print(summary)
-    if outcome.status != "done":
-        raise _fail(outcome.error or "the run failed")
+    if result.status is not State.DONE:
+        raise _fail(escape(redactor.text(result.reason or "the run failed")))
 
 
 def _event_printer(redactor: Redactor) -> EventHandler:

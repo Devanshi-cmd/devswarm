@@ -152,3 +152,47 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Alternatives:** A fixed delimiter, or a random id in the system prompt.
 - **What would break:** A fixed delimiter can be spoofed by the issue text. A random id in the system prompt changes the prefix, so nothing would ever be cached.
 - **Limit:** This lowers the risk of prompt injection but cannot remove it. The real protection is that a compromised agent still has no network, no secrets and no way to reach the host.
+
+## M4: Multi-agent orchestration
+
+### The state machine is a pure function
+
+- **What:** `transition(state, event, counters, config)` does no I/O and calls no model.
+- **Why:** Every path, including budget failures and re-plans, can be tested exactly and for free.
+- **Alternatives:** Letting an LLM choose the next agent.
+- **What would break:** Routing would become unpredictable, and a confused model could loop or skip the tests.
+
+### Agents get summaries, not transcripts
+
+- **What:** The orchestrator passes the plan, the current diff, failing tests and reviewer feedback.
+- **Why:** Context stays small and cheap, and each agent judges the work on its own.
+- **Alternatives:** One shared conversation.
+- **What would break:** Context would grow towards the 100K pricing threshold, and a Reviewer reading the Coder's reasoning tends to agree with it.
+
+### Git trees as snapshots
+
+- **What:** `git add -A` and `git write-tree` record the whole working tree before an agent runs. Comparing two trees shows what it changed.
+- **Why:** This catches changes made through `run_command`, which tool restrictions cannot see. Snapshots are also cheap, because git reuses unchanged files.
+- **Alternatives:** Copying the repo, or inspecting tool calls.
+- **What would break:** The Tester could change source through a shell command and nobody would notice.
+
+### Loop detection ignores test files
+
+- **What:** The repeated-change check compares only non-test parts of the diff.
+- **Why:** The Tester adds tests between passes. Comparing everything would make an unchanged fix look like new work.
+- **Alternatives:** Comparing the full diff.
+- **What would break:** A Coder repeating itself would go undetected until the iteration limit.
+
+### Failures are identified by test name and error type
+
+- **What:** Repeats are counted on `test|ErrorType`, not the full message.
+- **Why:** Messages include values that change between runs, such as memory addresses.
+- **Alternatives:** Comparing raw output.
+- **What would break:** Two identical failures would look different, so the loop would never be detected.
+
+### A re-plan starts from clean code
+
+- **What:** Before re-planning, the working copy is reset. The Planner receives a summary of what failed.
+- **Why:** The new plan should not inherit the approach that just failed.
+- **Alternatives:** Keeping the partial changes.
+- **What would break:** The next attempt tends to patch the same broken approach.

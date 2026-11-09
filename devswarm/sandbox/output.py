@@ -40,3 +40,10 @@ class HeadTailBuffer:
         if omitted > 0:
             return f"{head}\n... [{omitted} bytes omitted] ...\n{tail}"
         return head + tail
+
+
+def clip(text: str, head: int, tail: int) -> str:
+    """Shorten text the same way command output is shortened."""
+    buffer = HeadTailBuffer(head, tail)
+    buffer.feed(text.encode())
+    return buffer.text()

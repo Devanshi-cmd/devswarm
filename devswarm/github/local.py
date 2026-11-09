@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -103,3 +104,42 @@ def export_branch(workspace: LocalWorkspace) -> None:
         Repo(workspace.source).git.fetch(os.fspath(workspace.path), refspec)
     except GitCommandError as exc:
         raise WorkspaceError(f"could not export branch: {exc.stderr.strip()}") from exc
+
+
+class GitRepoState:
+    """The orchestrator's view of the working copy.
+
+    Runs host git on files the agent has touched, which is safe because the sandbox
+    can only reach .git read-only, so hooks and config in it are still ours.
+    """
+
+    def __init__(self, workspace: LocalWorkspace, is_test_path: Callable[[str], bool]) -> None:
+        self._repo = Repo(workspace.path)
+        self._is_test_path = is_test_path
+
+    def is_test_path(self, path: str) -> bool:
+        return self._is_test_path(path)
+
+    def snapshot(self) -> str:
+        """Record the whole working tree in git's object store and return its id."""
+        self._repo.git.add(all=True)
+        return str(self._repo.git.write_tree())
+
+    def changed_paths(self, before: str, after: str) -> list[str]:
+        output = str(self._repo.git.diff("--name-only", "--no-renames", "-z", before, after))
+        return [path for path in output.split("\0") if path]
+
+    def restore(self, snapshot: str, paths: list[str]) -> None:
+        for path in paths:
+            if self._repo.git.ls_tree(snapshot, "--", path):
+                self._repo.git.checkout(snapshot, "--", path)
+            else:
+                self._repo.git.rm("-f", "--ignore-unmatch", "--", path)
+
+    def diff(self) -> str:
+        self._repo.git.add(all=True)
+        return str(self._repo.git.diff("--cached", "--no-ext-diff", "--no-textconv", "HEAD"))
+
+    def reset_to_base(self) -> None:
+        self._repo.git.reset("--hard", "HEAD")
+        self._repo.git.clean("-fdx")

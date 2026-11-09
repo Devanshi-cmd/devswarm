@@ -31,6 +31,9 @@ packages = ["devswarm"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Tests are plain functions. These stop names like TesterAgent and tester_finish being collected.
+python_functions = ["test_*"]
+python_classes = ["Test_*"]
 
 [tool.ruff]
 line-length = 100
