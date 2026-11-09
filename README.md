@@ -1,6 +1,6 @@
 # DevSwarm
 
-**Give it a GitHub issue, and it opens a tested pull request.** A Planner, Coder, Tester and Reviewer work together inside a locked-down Docker container, with no human involved until review.
+**Give it a GitHub issue, and it opens a tested pull request.** A Planner, Coder, Tester and Reviewer work together, with every command running in a locked-down Docker container and no human involved until review.
 
 **See a real result:** [this pull request](https://github.com/Devanshi-cmd/devswarm-demo/pull/2) was produced from [this issue](https://github.com/Devanshi-cmd/devswarm-demo/issues/1), end to end, for $0.0037.
 
@@ -28,7 +28,7 @@ flowchart LR
     V -- pass --> R[Reviewer]
     R -- changes --> C
     R -- approve --> PR[Pull request]
-    subgraph Sandbox [Docker: no network, no secrets]
+    subgraph Sandbox ["Every command runs in Docker: no network, no secrets"]
         P
         C
         T
@@ -95,7 +95,7 @@ Each agent's model and effort can be set separately, such as `--effort coder=hig
 
 | Risk | Protection |
 |---|---|
-| Malicious code in a repository | Everything runs in a container with no network, no secrets, no root, and resource limits |
+| Malicious code in a repository | Every command runs in a container with no network, no secrets, no root, and resource limits. File tools on the host are confined to the working copy |
 | Prompt injection in an issue | Untrusted text is kept in labelled data blocks, and a compromised agent still has nowhere to send anything |
 | A planted git hook | `.git` is read-only inside the sandbox |
 | Path traversal and symlink tricks | Files are opened one path component at a time, refusing symlinks |

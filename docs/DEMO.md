@@ -14,8 +14,8 @@ Everything here uses real API calls. A full run costs about half a cent.
 | Time | Do this | Say this |
 |---|---|---|
 | 0:00 | Show the issue on GitHub | "This is a real bug report. Nobody is going to touch the code." |
-| 0:10 | `scripts/demo.sh owner/repo#1` | "One command: four agents, in a locked-down container." |
-| 0:20 | Let PLAN and CODE scroll | "The Planner reads the code. The Coder fixes it. There's no network and no secrets in there." |
+| 0:10 | `scripts/demo.sh owner/repo#1` | "One command: four agents, and everything they run stays in a locked-down container." |
+| 0:20 | Let PLAN and CODE scroll | "The Planner reads the code. The Coder fixes it. Its commands have no network and no secrets." |
 | 0:45 | Let TEST and REVIEW scroll | "The Tester writes new tests. DevSwarm runs the suite itself, so the model can't just claim it passed." |
 | 1:00 | Open the pull request link | "Here's the PR: the plan, the tests, the review verdict and the total cost." |
 | 1:15 | Open the dashboard run page | "And every prompt, tool call and cent is recorded." |
