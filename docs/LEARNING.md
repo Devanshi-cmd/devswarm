@@ -1,0 +1,64 @@
+# Learning notes
+
+Each decision records what we chose, why, what the alternatives were, and what would break if we did it differently.
+
+## M1: Skeleton
+
+### A `Protocol` between the agents and the LLM
+
+- **What:** Agents depend on `LLMClient`, an interface with one method: `create(request) -> response`. `AnthropicLLMClient` and `MockLLMClient` both satisfy it.
+- **Why:** The whole test suite can run offline and free, and tests can script exact model behaviour such as a refusal.
+- **Alternatives:** Patching the `anthropic` module in each test, or spending real money in tests.
+- **What would break:** With patches, tests are tied to how the SDK is called internally, so a harmless refactor breaks them. With real calls, CI costs money and fails at random.
+
+### Testing the real client through a fake HTTP transport
+
+- **What:** `test_llm_client.py` builds a real SDK client over `httpx2.MockTransport`, so only the network is fake.
+- **Why:** It checks what actually gets sent, such as the `cache_control` and `thinking` fields, and how real SDK exceptions are raised for 429 and 529.
+- **Alternatives:** A fake SDK object.
+- **What would break:** A fake SDK would accept any arguments, so a malformed request would pass the tests and fail against the API.
+- **Limit:** This proves the request has the shape we intended. Only `devswarm smoke --live` proves the API accepts it.
+
+### Our own retry loop, with SDK retries off
+
+- **What:** `max_retries=0` on the SDK. Our loop retries 429, 5xx and connection errors, uses exponential backoff with full jitter, and honours `Retry-After`.
+- **Why:** Every retry appears in the trace, and you can read the whole algorithm in about 30 lines.
+- **Alternatives:** The SDK's built-in retries (default 2).
+- **What would break:** With both on, retries multiply (6 × 3 attempts), and those inside the SDK are invisible to the trace. Without jitter, callers rate-limited at the same moment all retry at the same moment and collide again.
+- **Not retried:** 400, 401 and 404. The same request will fail the same way, so retrying only wastes time.
+
+### Prompt caching at two levels
+
+- **What:** An explicit breakpoint on the system prompt, plus top-level `cache_control`, which moves forward as the conversation grows.
+- **Why:** Each turn resends the whole conversation. Cached text costs 0.1× the input price to re-read, and 1.25× once to write.
+- **Alternatives:** Caching only system and tools, which leaves the growing history at full price; or managing message-level markers by hand.
+- **What would break:** Anything that changes the prefix, like a timestamp in the system prompt, silently removes the saving. No error appears, only `cache_read_input_tokens` staying at 0, which is why `devswarm smoke` checks it.
+
+### Append-only conversations
+
+- **What:** A message is never edited or removed once sent. Thinking blocks go back to the API unchanged. Long tool output must be cut down when it arrives.
+- **Why:** The API returns a 400 if thinking blocks are replayed after earlier history changed. Editing also invalidates the cache from that point on.
+- **Alternatives:** Pruning old tool results to save context.
+- **What would break:** Pruning can fail the request outright. `MockLLMClient` returns the same 400, so a bug like this shows up in offline tests.
+
+### The trace stores message deltas
+
+- **What:** Each `llm_calls` row stores only the messages that are new since the previous call. `reconstruct_messages` rebuilds the full list.
+- **Why:** The full list grows every turn, so storing it per call is quadratic. A 30-turn agent would store the first message 30 times.
+- **Alternatives:** Store every full prompt, which is simple but bloats the database quickly.
+- **What would break:** This depends on append-only history. If history could be edited, concatenating the deltas would give the wrong conversation.
+
+### Redact on the way into storage
+
+- **What:** `TraceStore` passes all text through `Redactor` before writing it. A logging filter does the same on the log handler.
+- **Why:** Agents read repos and issues, which may contain secrets. The database and logs may later be shared or shown in a demo video.
+- **Alternatives:** Redact when displaying, which leaves the secret in the database file.
+- **What would break:** Any new display path, or anyone opening the file directly, would expose the secret. The test reads the raw database bytes for this reason.
+
+### Cost accounting
+
+- **What:** A per-model `PRICE_TABLE`. An unknown model raises an error, and a request over a model's long-context threshold is priced entirely at the higher rate.
+- **Why:** The `$1.00` budget is only as accurate as this table.
+- **Alternatives:** Return a cost of 0 for unknown models, or assume cache reads are always 0.1× input.
+- **What would break:** A zero cost would let a run ignore its budget. The 0.1× assumption is wrong for Opus 5.5, where reads are 0.05×.
+- **Assumption:** We count cached and uncached input toward the 100K threshold. That is the cautious reading, because the docs we had only say "prompt length".
