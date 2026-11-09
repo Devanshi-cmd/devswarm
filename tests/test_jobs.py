@@ -250,7 +250,7 @@ class WorkerGitHub(FakeGitHub):
     [
         (RepoAccess(True, True, 1, False), "public"),
         (RepoAccess(False, True, 999_999_999, False), "too large"),
-        (RepoAccess(False, True, 1, False, "Rust"), "only Python"),
+        (RepoAccess(False, True, 1, False, "Haskell"), "supported"),
     ],
 )
 def test_refusals(access: RepoAccess, expected: str) -> None:
@@ -258,7 +258,9 @@ def test_refusals(access: RepoAccess, expected: str) -> None:
     assert reason is not None and expected in reason
 
 
-@pytest.mark.parametrize("language", ["Python", "Jupyter Notebook", None])
+@pytest.mark.parametrize(
+    "language", ["Python", "Jupyter Notebook", "TypeScript", "JavaScript", "Rust", None]
+)
 def test_supported_languages(language: str | None) -> None:
     assert refusal(RepoAccess(False, True, 1, False, language), REF) is None
 
@@ -288,6 +290,7 @@ def make_worker(
             work_root=env.work,
             sandbox_factory=lambda path, image: _context(box),
             image_resolver=lambda path: "image",
+            test_baseline=False,
         ),
         redactor=Redactor([TOKEN]),
     )
@@ -339,11 +342,11 @@ def test_refused_repo_spends_nothing_and_never_forks(
     remote: Path,  # noqa: F811
 ) -> None:
     job = env.queue.create(str(REF))
-    github = ForkingGitHub(str(remote), RepoAccess(False, False, 1, False, "Rust"))
+    github = ForkingGitHub(str(remote), RepoAccess(False, False, 1, False, "Haskell"))
     make_worker(env, store, github, script=[]).run_once()
     finished = env.queue.get(job.id)
     assert finished is not None and finished.status == "failed"
-    assert "only Python" in (finished.error or "")
+    assert "Haskell" in (finished.error or "")
     assert store.list_runs() == []
     assert github.forked == []
 

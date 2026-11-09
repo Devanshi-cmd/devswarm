@@ -184,6 +184,7 @@ def test_hidden_tests_never_reach_devswarm_agents(tmp_path: Path, store: TraceSt
             work_root=tmp_path / "work",
             sandbox_factory=factory,
             image_resolver=lambda path: "image",
+            test_baseline=False,
         ),
         MachineConfig(),
     )

@@ -326,3 +326,27 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Why:** This form can be used by anyone with the code. Nobody's project should receive an automated pull request that no person chose to send.
 - **Alternatives:** Opening the pull request on the original project automatically.
 - **What would break:** Maintainers could be flooded with unreviewed AI pull requests from this account. For the same reason, `@mentions` and issue links are neutralised, since GitHub would otherwise turn them into notifications.
+
+## Multiple languages
+
+### One profile class per language
+
+- **What:** Each language describes its detection, image, test command, failure parsing and resource limits in one class in `sandbox/images.py`. The rest of the system only uses that interface.
+- **Why:** Nothing else needs to know what a language is, so adding one touches one file.
+- **Alternatives:** `if language == ...` branches throughout the code.
+- **What would break:** Every new language would mean hunting through the orchestrator, sandbox and prompts.
+
+### The mixed-repository rule
+
+- **What:** When a repo matches several languages, the one with the most source bytes wins, and Cargo manifests are searched up to two folders deep.
+- **Why:** Real projects mix languages, and a `package.json` at the root doesn't make a Rust CLI a Node project.
+- **Alternatives:** A fixed priority order.
+- **What would break:** A mostly-Rust repo with a small Node wrapper would be tested with the wrong tools.
+
+### No project code during the phase with network
+
+- **What:** Only manifests and lockfiles enter the image. Rust gets empty stub files in place of source, and Node installs with `--ignore-scripts`.
+- **Why:** Code from an untrusted repo must not run while the network is available.
+- **Alternatives:** Installing from the full checkout, which is how projects are normally built.
+- **What would break:** A malicious build script could send data anywhere.
+- **Limit:** Precompiling Rust dependencies runs their build scripts with network on, just as `pip` runs package install code. No secrets or project files are present.

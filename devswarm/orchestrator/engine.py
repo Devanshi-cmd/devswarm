@@ -119,6 +119,7 @@ class Orchestrator:
         budget: Budget,
         config: MachineConfig | None = None,
         on_progress: Callable[[str], None] | None = None,
+        project_notes: str = "",
     ) -> None:
         self._run_id = run_id
         self._agents = agents
@@ -129,6 +130,7 @@ class Orchestrator:
         self._budget = budget
         self._config = config or MachineConfig()
         self._on_progress = on_progress or (lambda message: None)
+        self._project_notes = project_notes
         self._loops = LoopDetector()
         self._memory = _Memory()
         self._counters = Counters()
@@ -174,6 +176,8 @@ class Orchestrator:
         )
 
     def _context(self, sections: list[Section]) -> AgentContext:
+        if self._project_notes:
+            sections = [Section("project_information", self._project_notes), *sections]
         return AgentContext(self._run_id, self._counters.iterations, sections)
 
     def _abort(self, reason: str) -> Event:

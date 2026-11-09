@@ -62,7 +62,7 @@ Full tables: [12 standard tasks](evals/RESULTS.md) and [6 harder tasks](evals/RE
 
 ## Quick start
 
-You need Python 3.12, [uv](https://docs.astral.sh/uv/), Docker, and an Anthropic API key.
+You need Python 3.12, [uv](https://docs.astral.sh/uv/), Docker, and an Anthropic API key. The repositories DevSwarm fixes can be Python, JavaScript/TypeScript or Rust.
 
 ```bash
 git clone https://github.com/Devanshi-cmd/devswarm.git
@@ -109,7 +109,8 @@ Each agent's model and effort can be set separately, such as `--effort coder=hig
 
 ## Known limitations
 
-- **Python only.** The language layer is designed so Node can be added as a new profile.
+- **Three languages.** Python, JavaScript/TypeScript and Rust. Each is one profile class, so more can be added. The hidden-test evals are still Python only.
+- **Install scripts are skipped for Node,** for safety, so packages that need them may fail. Rust needs a long first build, and the Tester can only add tests under `tests/`.
 - **The eval can't separate these systems yet.** It has 18 small tasks run once each, and every configuration scored 100%. Real repositories are larger and messier.
 - **Forks don't reach upstream automatically.** Without write access, DevSwarm opens the pull request inside a fork and gives you a link to propose it to the original project yourself.
 - **Hosted jobs run one at a time,** only on public repositories, and can't be cancelled once started.

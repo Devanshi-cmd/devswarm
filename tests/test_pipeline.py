@@ -106,6 +106,7 @@ def run_with_fake(
             machine=machine,
             sandbox_factory=lambda path, image: _context(sandbox),
             image_resolver=lambda path: "image",
+            test_baseline=False,
         ),
     )
 

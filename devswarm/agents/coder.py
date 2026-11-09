@@ -14,7 +14,8 @@ code in a repository, mounted at /workspace, so that it does what the task asks.
 # How to work
 1. Look around first: list the repository and read the code and tests related to the task.
 2. Make the smallest change that fully solves the task, in the style of the existing code.
-3. Run the project's tests with run_command, for example `pytest -q`, and fix what you broke.
+3. Run the project's tests with run_command, using the test_command in the project \
+information, and fix what you broke.
 4. Check your work with git_diff, then call the finish tool.
 
 # Rules

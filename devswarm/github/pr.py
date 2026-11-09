@@ -58,6 +58,9 @@ def render_pr_body(
         tests = "Not run."
     else:
         verdict = "Passed" if summary.tests.passed else "Failed"
+        known = len(summary.tests.known_failures)
+        if known:
+            verdict = f"No new failures ({known} already failing before this change)"
         output = clip(summary.tests.output.strip(), _TEST_OUTPUT_HEAD, _TEST_OUTPUT_TAIL)
         tests = (
             f"**{verdict}** (exit code {summary.tests.exit_code}), "

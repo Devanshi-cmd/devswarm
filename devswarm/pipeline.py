@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from git.exc import GitCommandError
@@ -23,10 +23,12 @@ from devswarm.github.local import (
     branch_name,
     clone_for_issue,
     commit_all,
+    exclude_generated,
     export_branch,
     last_commit_diff,
     prepare_local_workspace,
     push_branch,
+    remove_generated,
 )
 from devswarm.github.pr import pr_title, quiet_references, render_pr_body, upstream_compare_url
 from devswarm.llm.types import LLMClient
@@ -41,9 +43,10 @@ from devswarm.orchestrator.engine import (
 )
 from devswarm.orchestrator.state_machine import MachineConfig, State
 from devswarm.orchestrator.verify import SandboxTestRunner
-from devswarm.sandbox.base import Sandbox
+from devswarm.sandbox.base import Sandbox, SandboxError
 from devswarm.sandbox.docker import DockerSandbox
 from devswarm.sandbox.images import detect_profile, ensure_image
+from devswarm.sandbox.output import clip
 from devswarm.storage.redact import Redactor
 from devswarm.storage.trace import TraceStore
 from devswarm.tools.base import ToolContext
@@ -51,6 +54,9 @@ from devswarm.tools.paths import Workspace
 from devswarm.tools.registry import default_registry
 
 SandboxFactory = Callable[[Path, str], AbstractContextManager[Sandbox]]
+
+_SETUP_TIMEOUT_SECONDS = 600
+_MAX_LISTED_FAILURES = 20
 
 
 @dataclass(frozen=True)
@@ -65,6 +71,7 @@ class RunOptions:
     image_resolver: Callable[[Path], str] = ensure_image
     on_event: EventHandler | None = None
     on_progress: Callable[[str], None] | None = None
+    test_baseline: bool = True
 
 
 @dataclass(frozen=True)
@@ -87,6 +94,20 @@ def _records_crash(store: TraceStore, run_id: str) -> Iterator[None]:
         raise
 
 
+def _record_baseline(run_id: str, tests: SandboxTestRunner, notes: str, store: TraceStore) -> str:
+    report = tests.record_baseline()
+    if report.passed:
+        return notes
+    known = tests.known_failures
+    step_id = store.start_step(run_id, "baseline")
+    status = "known_failures" if known else "failed"
+    store.finish_step(step_id, status, summary=clip(report.output, 2_000, 8_000))
+    if not known:
+        return notes
+    listed = ", ".join(item.split("|")[0] for item in known[:_MAX_LISTED_FAILURES])
+    return f"{notes}\npre_existing_test_failures (not caused by this task, leave them): {listed}"
+
+
 def _execute(
     run_id: str,
     task: str,
@@ -95,10 +116,24 @@ def _execute(
     finalizer_for: Callable[[Budget], Finalizer],
 ) -> tuple[OrchestratorResult, Path | None]:
     profile = detect_profile(workspace.path)
-    budget = Budget(options.limits)
+    exclude_generated(workspace, profile.generated_paths)
+    # Resolved before the budget starts, so a slow first image build doesn't use up the run.
+    image = options.image_resolver(workspace.path)
+    limits = options.limits or BudgetLimits()
     config = options.config
 
-    with options.sandbox_factory(workspace.path, options.image_resolver(workspace.path)) as sandbox:
+    with options.sandbox_factory(workspace.path, image) as sandbox:
+        setup = profile.setup_command()
+        if setup is not None and sandbox.exec(setup, timeout=_SETUP_TIMEOUT_SECONDS).exit_code != 0:
+            raise SandboxError("could not prepare the project's dependencies")
+
+        tests = SandboxTestRunner(sandbox, profile)
+        notes = profile.project_notes()
+        if options.test_baseline:
+            notes = _record_baseline(run_id, tests, notes, options.store)
+        # Started after setup, so a slow first compile doesn't use up the run's time limit.
+        budget = Budget(replace(limits, max_seconds=max(limits.max_seconds, profile.max_seconds)))
+
         tool_context = ToolContext(Workspace(workspace.path), sandbox)
         common = (
             options.llm,
@@ -117,13 +152,17 @@ def _execute(
                 reviewer=ReviewerAgent(config.reviewer, *common),
             ),
             repo=GitRepoState(workspace, profile.is_test_path),
-            tests=SandboxTestRunner(sandbox, profile),
+            tests=tests,
             finalize=finalizer_for(budget),
             store=options.store,
             budget=budget,
             config=options.machine,
             on_progress=options.on_progress,
+            project_notes=notes,
         ).run(task)
+
+    # Installed packages and build output can take gigabytes, and every run keeps its copy.
+    remove_generated(workspace.path, profile.generated_paths)
 
     report_path = None
     if result.failure_report:

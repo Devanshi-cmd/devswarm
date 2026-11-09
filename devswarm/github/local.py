@@ -82,6 +82,34 @@ def prepare_local_workspace(repo: Path, target: Path, branch: str) -> LocalWorks
     return LocalWorkspace(path=target, branch=branch, source=kept_source)
 
 
+def exclude_generated(workspace: LocalWorkspace, names: tuple[str, ...]) -> None:
+    """Keep installed packages and build output out of diffs and commits.
+
+    Uses git's local exclude file, because a repository's own .gitignore can't be relied on.
+    """
+    if not names:
+        return
+    exclude = workspace.path / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    with exclude.open("a") as file:
+        file.write("".join(f"{name}/\n" for name in names))
+
+
+def remove_generated(root: Path, names: tuple[str, ...]) -> None:
+    for directory, subdirectories, _ in os.walk(root):
+        for name in list(subdirectories):
+            if name == ".git":
+                subdirectories.remove(name)
+            elif name in names:
+                path = Path(directory) / name
+                # A symlink is removed itself, never followed into wherever it points.
+                if path.is_symlink():
+                    path.unlink()
+                else:
+                    shutil.rmtree(path, ignore_errors=True)
+                subdirectories.remove(name)
+
+
 def commit_all(workspace: LocalWorkspace, message: str) -> bool:
     """Commit everything in the working copy. Returns False when there was nothing to commit."""
     repo = Repo(workspace.path)

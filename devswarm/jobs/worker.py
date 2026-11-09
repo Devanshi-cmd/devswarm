@@ -20,13 +20,13 @@ from devswarm.jobs.queue import Job, JobQueue
 from devswarm.orchestrator.state_machine import State
 from devswarm.pipeline import RunOptions, run_issue
 from devswarm.sandbox.base import SandboxError
+from devswarm.sandbox.images import SUPPORTED_GITHUB_LANGUAGES, SUPPORTED_LANGUAGE_NAMES
 from devswarm.storage.redact import Redactor
 
 logger = logging.getLogger(__name__)
 
 _POLL_SECONDS = 2.0
 _MAX_REPO_KB = 200_000
-_SUPPORTED_LANGUAGES = ("Python", "Jupyter Notebook")
 
 
 def refusal(access: RepoAccess, ref: IssueRef) -> str | None:
@@ -37,8 +37,8 @@ def refusal(access: RepoAccess, ref: IssueRef) -> str | None:
     if access.size_kb > _MAX_REPO_KB:
         return f"{ref.full_name} is too large for this service"
     # GitHub reports None for very small repositories, which the sandbox can still detect.
-    if access.language is not None and access.language not in _SUPPORTED_LANGUAGES:
-        return f"only Python repositories are supported, and {ref.full_name} is {access.language}"
+    if access.language is not None and access.language not in SUPPORTED_GITHUB_LANGUAGES:
+        return f"{ref.full_name} is {access.language}; supported: {SUPPORTED_LANGUAGE_NAMES}"
     return None
 
 

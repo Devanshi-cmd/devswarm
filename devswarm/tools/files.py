@@ -13,7 +13,15 @@ _MAX_FILE_BYTES = 5_000_000
 _MAX_READ_LINES = 1_000
 _MAX_READ_CHARS = 40_000
 _MAX_LIST_ENTRIES = 500
-_SKIPPED_DIRECTORIES = {".git", "__pycache__", ".venv", "node_modules", ".mypy_cache"}
+_SKIPPED_DIRECTORIES = {
+    ".git",
+    "__pycache__",
+    ".venv",
+    "node_modules",
+    ".mypy_cache",
+    "target",
+    ".devswarm-target",
+}
 
 
 def _read_text(workspace: Workspace, path: str) -> str:

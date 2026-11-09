@@ -21,6 +21,17 @@ class SandboxError(Exception):
 
 
 @dataclass(frozen=True)
+class SandboxLimits:
+    cpus: str = "2"
+    memory: str = "2g"
+    pids: int = 256
+    tmpfs_size: str = "512m"
+    # The container exits by itself after this long. Even a SIGKILL of DevSwarm,
+    # which no cleanup code can catch, cannot leave one running forever.
+    lifetime_seconds: int = 3_600
+
+
+@dataclass(frozen=True)
 class CommandResult:
     exit_code: int
     stdout: str

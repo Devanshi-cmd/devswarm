@@ -12,7 +12,6 @@ import threading
 import time
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType, TracebackType
 from typing import Any, Self
@@ -25,22 +24,13 @@ from devswarm.sandbox.base import (
     WORKSPACE,
     CommandResult,
     SandboxError,
+    SandboxLimits,
 )
+from devswarm.sandbox.images import detect_profile
 from devswarm.sandbox.output import HeadTailBuffer
 
 _DOCKER_EXEC_FAILED = 125  # Docker's own failure code, e.g. the container is gone.
 _CONTROL_TIMEOUT_SECONDS = 60
-
-
-@dataclass(frozen=True)
-class SandboxLimits:
-    cpus: str = "2"
-    memory: str = "2g"
-    pids: int = 256
-    tmpfs_size: str = "512m"
-    # The container exits by itself after this long. Even a SIGKILL of DevSwarm,
-    # which no cleanup code can catch, cannot leave one running forever.
-    lifetime_seconds: int = 3_600
 
 
 def _docker(args: list[str], timeout: int = _CONTROL_TIMEOUT_SECONDS) -> str:
@@ -57,13 +47,20 @@ def _docker(args: list[str], timeout: int = _CONTROL_TIMEOUT_SECONDS) -> str:
     return result.stdout.strip()
 
 
+def _limits_for(repo: Path) -> SandboxLimits:
+    try:
+        return detect_profile(repo).limits
+    except SandboxError:
+        return SandboxLimits()
+
+
 class DockerSandbox:
     def __init__(self, repo: Path, image: str, limits: SandboxLimits | None = None) -> None:
         self._repo = repo.resolve()
         if "," in str(self._repo):
             raise SandboxError("repository paths containing a comma cannot be mounted")
         self._image = image
-        self._limits = limits or SandboxLimits()
+        self._limits = limits or _limits_for(self._repo)
         self._name: str | None = None
         self._previous_sigterm: Any = None
         self._handles_sigterm = False

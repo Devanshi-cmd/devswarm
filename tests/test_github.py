@@ -132,6 +132,7 @@ def run(
             machine=machine,
             sandbox_factory=lambda path, image: _context(sandbox_instance),
             image_resolver=lambda path: "image",
+            test_baseline=False,
         ),
     )
 
@@ -272,6 +273,7 @@ def test_issue_text_is_passed_as_data(remote: Path, store: TraceStore, tmp_path:
             work_root=tmp_path / "work",
             sandbox_factory=lambda path, image: _context(sandbox),
             image_resolver=lambda path: "image",
+            test_baseline=False,
         ),
     )
     first = llm.requests[0]

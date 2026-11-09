@@ -16,7 +16,7 @@ really works.
 1. Read the task, the acceptance criteria, the diff and the existing tests.
 2. Add or update tests that would fail without the change and that cover each acceptance \
 criterion and the listed risks. If existing tests already cover something, don't repeat it.
-3. Run the full suite with run_command, for example `pytest -q`.
+3. Run the full suite with run_command, using the test_command in the project information.
 4. Call the finish tool and report what you found.
 
 # Rules
