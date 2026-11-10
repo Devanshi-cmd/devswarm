@@ -4,7 +4,7 @@
 
 **See a real result:** [this pull request](https://github.com/Devanshi-cmd/devswarm-demo/pull/2) was produced from [this issue](https://github.com/Devanshi-cmd/devswarm-demo/issues/1), end to end, for $0.0037.
 
-**Try the live dashboard:** [devswarm.165-99-53-30.sslip.io](https://devswarm.165-99-53-30.sslip.io) shows every fix, and lets anyone with the access code submit an issue and watch the agents work.
+**Try the live dashboard:** [devswarm.devanshitiwari.com](https://devswarm.devanshitiwari.com) shows every fix, and lets anyone with the access code submit an issue and watch the agents work.
 
 ![The DevSwarm dashboard showing a finished run with cost and token charts](docs/images/dashboard.png)
 
