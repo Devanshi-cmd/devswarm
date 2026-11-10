@@ -6,7 +6,7 @@
 
 **Try the live dashboard:** [devswarm.devanshitiwari.com](https://devswarm.devanshitiwari.com) shows every fix, and lets anyone with the access code submit an issue and watch the agents work.
 
-![The DevSwarm dashboard showing a finished run with cost and token charts](docs/images/dashboard.png)
+![The DevSwarm home page: a form for a GitHub issue link, beside the latest run that opened a pull request](docs/images/home.png)
 
 ## Highlights
 
@@ -15,7 +15,13 @@
 - **Models can't grade themselves.** DevSwarm runs the tests itself and goes by the exit code. The Tester can only change test files.
 - **Built for untrusted code.** No network or secrets in the sandbox, read-only `.git`, symlink-safe file tools, and prompt-injection defences.
 - **Measured.** 18 tasks scored by hidden tests the agents never see, compared against headless Claude Code.
-- **Observable.** Every prompt, tool call and cent is recorded and shown in a local dashboard.
+- **Observable.** Every prompt, tool call and cent is recorded and shown in the dashboard.
+
+## Dashboard
+
+Every run gets its own page. It shows how long each agent took, what each one cost, how much of the prompt came from cache, and whether the tests passed, followed by a step-by-step timeline and the final diff. The dashboard has a day and a night theme.
+
+![A finished run: time per stage, cost per agent, cache share, test result and model calls](docs/images/dashboard.png)
 
 ## How it works
 

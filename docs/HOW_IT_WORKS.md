@@ -92,6 +92,10 @@ Prompt caching does most of the cost work. Conversations are strictly append-onl
 
 Every LLM call and tool call goes to SQLite, with secrets removed on the way in. Because conversations are append-only, each row stores only the new messages. The dashboard reads this database through a read-only connection, and treats everything in it as untrusted.
 
+Each run's page shows how long each stage took, the cost per agent, how much of the prompt came from cache, the test result, every step with its prompts and tool calls, and the final diff.
+
+![A finished run in the dashboard](images/dashboard.png)
+
 ## 10. Evaluation
 
 `devswarm eval` runs buggy tasks and scores them with hidden tests. Agents only ever receive a task's `repo/` folder. The hidden tests join the code in a fresh container after the agents have stopped, and scoring ignores any pytest configuration in the repository. A test proves that every task's bug is real and that a reference fix passes.
