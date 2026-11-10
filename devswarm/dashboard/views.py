@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from sqlite3 import Row
 from typing import Any
@@ -48,10 +48,19 @@ def format_usd(value: float) -> str:
     return f"${value:.4f}"
 
 
+def _seconds(started: str | None, finished: str | None) -> float:
+    if not started or not finished:
+        return 0.0
+    return (datetime.fromisoformat(finished) - datetime.fromisoformat(started)).total_seconds()
+
+
 def format_duration(started: str | None, finished: str | None) -> str:
     if not started or not finished:
         return "-"
-    seconds = (datetime.fromisoformat(finished) - datetime.fromisoformat(started)).total_seconds()
+    return format_seconds(_seconds(started, finished))
+
+
+def format_seconds(seconds: float) -> str:
     if seconds < 60:
         return f"{seconds:.1f}s"
     return f"{int(seconds // 60)}m {int(seconds % 60):02d}s"
@@ -131,8 +140,25 @@ class TableRow:
 @dataclass(frozen=True)
 class StageView:
     label: str
+    agent: str  # Picks the stage's colour.
     state: str  # done, active, failed or pending.
-    icon: str
+    detail: str
+    # Where the stage sits on the time bar, in percent of its width.
+    x: float
+    width: float
+
+
+@dataclass(frozen=True)
+class TimeBar:
+    stages: tuple[StageView, ...]
+    outcome: StatusView
+
+
+@dataclass(frozen=True)
+class AgentUsageView:
+    agent: str
+    cost: str
+    share: float  # Bar length, 0 to 100, relative to the most expensive agent.
 
 
 @dataclass(frozen=True)
@@ -169,8 +195,12 @@ class RunView:
     failure_report: str | None
     pr_url: str | None
     upstream_url: str | None
-    stages: tuple[StageView, ...]
+    progress: TimeBar
     activity: tuple[ActivityView, ...]
+    issue_url: str | None
+    agent_costs: tuple[AgentUsageView, ...]
+    total_tokens: str
+    cache_percent: float
 
 
 def _step_view(row: Row) -> StepView:
@@ -238,6 +268,18 @@ def run_view(store: TraceStore, run_id: str, work_root: Path) -> RunView:
         for row in usage
     )
 
+    top_cost = max((row["cost_usd"] for row in usage), default=0.0)
+    agent_costs = tuple(
+        AgentUsageView(
+            row["agent"],
+            format_usd(row["cost_usd"]),
+            100 * row["cost_usd"] / top_cost if top_cost else 0.0,
+        )
+        for row in usage
+    )
+    total_tokens = sum(row[item.key] for row in usage for item in _TOKEN_SERIES)
+    issue = _ISSUE_REPO.match(run["repo"] or "")
+
     verifications = [row for row in rows if row["agent"] == "verify"]
     prompt_tokens = run["input_tokens"] + run["cache_read_tokens"] + run["cache_write_tokens"]
     diff = _read_artifact(work_root, run_id, "changes.diff")
@@ -267,8 +309,12 @@ def run_view(store: TraceStore, run_id: str, work_root: Path) -> RunView:
         failure_report=_read_artifact(work_root, run_id, "failure_report.md"),
         pr_url=pr_url.strip() if pr_url else None,
         upstream_url=_read_artifact(work_root, run_id, "upstream_url.txt"),
-        stages=stage_views(rows, run["status"]),
+        progress=time_bar(rows, run["status"], pr_url is not None),
         activity=activity_views(store, run_id),
+        issue_url=f"https://github.com/{issue[1]}/issues/{issue[2]}" if issue else None,
+        agent_costs=agent_costs,
+        total_tokens=format_tokens(total_tokens),
+        cache_percent=run["cache_read_tokens"] / prompt_tokens if prompt_tokens else 0.0,
     )
 
 
@@ -370,22 +416,30 @@ def step_turns(store: TraceStore, step_id: int) -> list[TurnView]:
 
 
 _STAGES = (
-    ("Plan", {"planner"}),
-    ("Code", {"coder"}),
-    ("Test", {"tester", "verify"}),
-    ("Review", {"reviewer"}),
-    ("Finish", set[str]()),
+    ("Plan", "Planning", "planner", {"planner"}),
+    ("Code", "Coding", "coder", {"coder"}),
+    ("Test", "Testing", "tester", {"tester", "verify"}),
+    ("Review", "Reviewing", "reviewer", {"reviewer"}),
 )
-_STAGE_ICONS = {"done": "✓", "active": "●", "failed": "✕", "pending": "○"}
+_MIN_SHARE = 3.0  # Percent, so a stage of a few seconds is still visible.
+_RUNNING_SPAN = 85.0  # Percent of the bar a running run fills, leaving room ahead.
+_GAP = 0.4
 _ACTIVITY_ITEMS = 10
 _ACTIVITY_DETAIL_CHARS = 100
 _DETAIL_FIELDS = ("path", "cmd", "pattern")
 _ISSUE_REPO = re.compile(r"^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]+)$")
 
 
-def stage_views(rows: list[Row], status: str) -> tuple[StageView, ...]:
+def _elapsed(row: Row) -> float:
+    if row["status"] == "running":
+        return _seconds(row["started_at"], datetime.now(UTC).isoformat())
+    return _seconds(row["started_at"], row["finished_at"])
+
+
+def time_bar(rows: list[Row], status: str, pr_opened: bool = False) -> TimeBar:
+    """The four stages, each as wide as the time it took."""
     latest = rows[-1]["agent"] if rows else None
-    current = next((i for i, (_, agents) in enumerate(_STAGES) if latest in agents), -1)
+    current = next((i for i, (*_, agents) in enumerate(_STAGES) if latest in agents), -1)
 
     def state(index: int) -> str:
         if status == "done" or index < current:
@@ -394,10 +448,37 @@ def stage_views(rows: list[Row], status: str) -> tuple[StageView, ...]:
             return "active" if status == "running" else "failed"
         return "pending"
 
-    return tuple(
-        StageView(label, state(index), _STAGE_ICONS[state(index)])
-        for index, (label, _) in enumerate(_STAGES)
-    )
+    seconds = [
+        sum(_elapsed(row) for row in rows if row["agent"] in agents) for *_, agents in _STAGES
+    ]
+    span = _RUNNING_SPAN if status == "running" else 100.0
+    total = sum(seconds)
+    shares = [max(_MIN_SHARE, 100 * value / total) if value else 0.0 for value in seconds]
+    scale = span / sum(shares) if any(shares) else 0.0
+
+    stages, x = [], 0.0
+    for index, (label, _, agent, agents) in enumerate(_STAGES):
+        width = shares[index] * scale
+        if state(index) == "pending":
+            detail = "Waiting"
+        elif state(index) == "active":
+            detail = "Running…"
+        else:
+            detail = format_seconds(seconds[index])
+            checks = [row for row in rows if row["agent"] == "verify" and "verify" in agents]
+            if checks:
+                detail += f" · {status_view(checks[-1]['status']).label.lower()}"
+        stages.append(StageView(label, agent, state(index), detail, x, max(width - _GAP, 0.0)))
+        x += width
+
+    if status == "running":
+        verb = _STAGES[current][1] if current >= 0 else "Starting"
+        outcome = StatusView(f"{verb} now", "running", "●")
+    elif status == "done":
+        outcome = StatusView("Pull request opened" if pr_opened else "Done", "good", "✓")
+    else:
+        outcome = status_view(status)
+    return TimeBar(tuple(stages), outcome)
 
 
 def activity_views(store: TraceStore, run_id: str) -> tuple[ActivityView, ...]:

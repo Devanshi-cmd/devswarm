@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}History · DevSwarm{% endblock %}
 {% block content %}
-<h1>History</h1>
+<div class="page-hero">
+  <h1>History.</h1>
+  <p>Every GitHub issue DevSwarm has worked on.</p>
+</div>
 <section class="tiles" aria-label="All-time summary">
   <div class="tile"><div class="tile-label">Pull requests opened</div><div class="tile-value">{{ stats.pull_requests }}</div></div>
   <div class="tile"><div class="tile-label">Issues attempted</div><div class="tile-value">{{ stats.attempted }}</div></div>

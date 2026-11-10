@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Runs · DevSwarm{% endblock %}
 {% block content %}
-<h1>All runs</h1>
-<p class="muted page-note">Every run, including local tasks and evaluations.</p>
+<div class="page-hero">
+  <h1>All runs.</h1>
+  <p>Every run, including local tasks and evaluations.</p>
+</div>
 {% include "_runs_table.html" %}
 {% endblock %}

@@ -75,6 +75,18 @@ def create_app(
         response.headers.update(_SECURITY_HEADERS)
         return response
 
+    @app.exception_handler(HTTPException)
+    async def error_page(request: Request, error: HTTPException) -> Response:
+        # Live-update partials keep a bare body; full pages get the dashboard's look.
+        if request.url.path.startswith("/partials/"):
+            return Response(str(error.detail), status_code=error.status_code)
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"status_code": error.status_code, "message": str(error.detail).capitalize()},
+            status_code=error.status_code,
+        )
+
     @contextmanager
     def open_store() -> Iterator[TraceStore]:
         with TraceStore(db_path, read_only=True) as store:
@@ -96,9 +108,18 @@ def create_app(
         jobs = views.active_jobs(queue) if queue else []
         return {"jobs": jobs}
 
+    def showcase(items: list[views.HistoryItem]) -> views.RunView | None:
+        """The latest run that opened a pull request, shown beside the form."""
+        item = next((i for i in items if i.pr_url and i.status.kind == "good"), None)
+        if item is None:
+            return None
+        with open_store() as store:
+            return views.run_view(store, item.run_id, work_root)
+
     def home_context(error: str | None = None, issue_url: str = "") -> dict[str, object]:
         items = history_items()
         return {
+            "showcase": showcase(items),
             "submissions_enabled": queue is not None and bool(access_code),
             "error": error,
             "issue_url": issue_url,

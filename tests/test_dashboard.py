@@ -1,6 +1,8 @@
 import re
 from collections.abc import Iterator
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from anthropic.types import MessageParam
@@ -8,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from devswarm.dashboard.app import create_app
 from devswarm.dashboard.charts import Datum, Series, horizontal_bars
-from devswarm.dashboard.views import format_duration, format_tokens, status_view
+from devswarm.dashboard.views import format_duration, format_tokens, status_view, time_bar
 from devswarm.llm.mock import MockLLMClient, text_turn, tool_turn
 from devswarm.llm.types import LLMError, LLMRequest
 from devswarm.storage.redact import Redactor
@@ -107,8 +109,8 @@ def test_run_detail_has_every_section(seed: Seed) -> None:
     for expected in (
         "Cost per agent",
         "Tokens per agent",
-        "Timeline",
-        "Final diff",
+        "Four agents.",
+        "The change.",
         "View as table",
     ):
         assert expected in page
@@ -121,7 +123,7 @@ def test_tiles_report_tests_and_counts(seed: Seed) -> None:
     run_id = finished_run(seed)
     page = seed.client().get(f"/runs/{run_id}").text
     assert "Passed" in page
-    assert "Re-plans" in page
+    assert "re-plans" in page
     assert ">4<" in page  # LLM calls across both agents.
 
 
@@ -200,6 +202,19 @@ def test_failure_report_and_pr_link(seed: Seed) -> None:
     assert "ran out of money" in page
     assert "# what happened" in page
     assert 'href="https://github.com/o/r/pull/1"' in page
+
+
+def test_home_shows_the_latest_pull_request_run(seed: Seed) -> None:
+    assert "showcase" not in seed.client().get("/").text
+    run_id = seed.store.start_run("Dates before 1970 crash", repo="octo/calc#7")
+    seed.add_step(run_id, "planner")
+    seed.store.finish_run(run_id, "done")
+    (seed.work_root / run_id).mkdir()
+    (seed.work_root / run_id / "pr_url.txt").write_text("https://github.com/octo/calc/pull/8\n")
+    page = seed.client().get("/").text
+    assert f'class="showcase" href="/runs/{run_id}"' in page
+    assert "Dates before 1970 crash" in page
+    assert "Pull request opened" in page
 
 
 def test_untrusted_text_is_escaped_everywhere(seed: Seed) -> None:
@@ -366,3 +381,40 @@ def test_status_always_has_an_icon_and_a_label(status: str, kind: str) -> None:
 def test_usage_ignores_steps_without_llm_calls(seed: Seed) -> None:
     run_id = finished_run(seed)
     assert "verify" not in [row["agent"] for row in seed.store.usage_by_agent(run_id)]
+
+
+def _step(agent: str, start: int, end: int | None, status: str = "finished") -> dict[str, Any]:
+    base = "2026-01-01T00:00:00+00:00"
+    moment = datetime.fromisoformat(base)
+    return {
+        "agent": agent,
+        "status": status,
+        "started_at": (moment + timedelta(seconds=start)).isoformat(),
+        "finished_at": None if end is None else (moment + timedelta(seconds=end)).isoformat(),
+    }
+
+
+def test_time_bar_sizes_stages_by_time() -> None:
+    rows = [
+        _step("planner", 0, 2),
+        _step("coder", 2, 400),
+        _step("tester", 400, 900),
+        _step("verify", 900, 901, "passed"),
+        _step("reviewer", 901, 903),
+    ]
+    bar = time_bar(rows, "done", pr_opened=True)  # type: ignore[arg-type]
+    plan, code, test, review = bar.stages
+    assert plan.width >= 2  # Two seconds still shows.
+    assert test.width > code.width > plan.width
+    assert test.detail == "8m 21s · passed"
+    assert bar.outcome.label == "Pull request opened"
+    assert review.x + review.width <= 100
+
+
+def test_time_bar_leaves_room_while_running() -> None:
+    rows = [_step("planner", 0, 10), _step("coder", 10, None, "running")]
+    bar = time_bar(rows, "running")  # type: ignore[arg-type]
+    assert [stage.state for stage in bar.stages] == ["done", "active", "pending", "pending"]
+    assert bar.stages[1].detail == "Running…"
+    assert bar.stages[1].x + bar.stages[1].width < 90
+    assert bar.outcome.label == "Coding now"

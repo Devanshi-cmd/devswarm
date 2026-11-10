@@ -1,25 +1,53 @@
 {% extends "base.html" %}
 {% block title %}DevSwarm{% endblock %}
+{% from "_status.html" import status %}
+{% from "_agent_icon.html" import agent_icon %}
 {% block content %}
-<section class="card hero">
-  <h1>Fix a GitHub issue</h1>
-  <p class="hero-lead">Paste an issue link. Four AI agents plan, fix, test and review the change, then open a pull request while you watch.</p>
-  {% if error %}<p class="form-error" role="alert"><span aria-hidden="true">✕</span> {{ error }}</p>{% endif %}
-  {% if submissions_enabled %}
-  <form class="submit-form" method="post" action="/jobs">
-    <label class="field field-wide">
-      <span>GitHub issue link</span>
-      <input type="text" name="issue_url" required autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo/issues/123" value="{{ issue_url }}">
-    </label>
-    <label class="field">
-      <span>Access code</span>
-      <input type="password" name="access_code" required autocomplete="off">
-    </label>
-    <button type="submit">Start fixing</button>
-  </form>
-  <p class="muted form-note">Works with public Python, JavaScript/TypeScript and Rust repositories. If this service can't push to one, it forks it and opens the pull request in the fork. Everything a run does is shown publicly here.</p>
-  {% else %}
-  <p class="muted">Submissions are turned off on this server.</p>
+<section class="card home-hero{% if not showcase %} home-hero-solo{% endif %}">
+  <div class="home-hero-copy">
+    <p class="home-hero-eyebrow">Issue in. Pull request out.</p>
+    <h1>Fix a GitHub issue, <span>without opening your editor.</span></h1>
+    <p class="home-hero-lead">Four AI agents plan, code, test and review the change, then open a pull request while you watch.</p>
+    {% if error %}<p class="form-error" role="alert"><span aria-hidden="true">✕</span> {{ error }}</p>{% endif %}
+    {% if submissions_enabled %}
+    <form class="home-form" method="post" action="/jobs">
+      <label class="field input-icon">
+        <span class="sr-only">GitHub issue link</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+        <input type="text" name="issue_url" required autocomplete="off" spellcheck="false" placeholder="https://github.com/owner/repo/issues/123" value="{{ issue_url }}">
+      </label>
+      <div class="home-form-row">
+        <label class="field input-icon">
+          <span class="sr-only">Access code</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg>
+          <input type="password" name="access_code" required autocomplete="off" placeholder="Access code">
+        </label>
+        <button type="submit">Start fixing <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </form>
+    {% else %}
+    <p class="muted">Submissions are turned off on this server.</p>
+    {% endif %}
+  </div>
+  {% if showcase %}
+  <a class="showcase" href="/runs/{{ showcase.id }}" aria-label="See a finished run: {{ showcase.title }}">
+    <div class="showcase-card">
+      <div class="showcase-head"><span class="mono">{{ showcase.repo }}</span>{{ status(showcase.progress.outcome) }}</div>
+      <p class="showcase-title">{{ showcase.title }}</p>
+      <svg class="time-bar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">
+        <rect class="time-bar-track" x="0" y="0" width="100" height="10"/>
+        {% for stage in showcase.progress.stages %}{% if stage.width %}
+        <rect class="agent-fill-{{ stage.agent }}" x="{{ '%.2f' | format(stage.x) }}" y="0" width="{{ '%.2f' | format(stage.width) }}" height="10"/>
+        {% endif %}{% endfor %}
+      </svg>
+      <ul class="showcase-steps">
+        {% for stage in showcase.progress.stages %}
+        <li>{{ agent_icon(stage.agent) }}<span class="showcase-agent">{{ stage.agent | capitalize }}</span><span class="showcase-time">{{ stage.detail }}</span></li>
+        {% endfor %}
+      </ul>
+      <div class="showcase-foot"><span>Fixed in {{ showcase.duration }}</span><strong>{{ showcase.cost }}</strong></div>
+    </div>
+  </a>
   {% endif %}
 </section>
 
