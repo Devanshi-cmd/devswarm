@@ -92,7 +92,7 @@ Prompt caching does most of the cost work. Conversations are strictly append-onl
 
 Every LLM call and tool call goes to SQLite, with secrets removed on the way in. Because conversations are append-only, each row stores only the new messages. The dashboard reads this database through a read-only connection, and treats everything in it as untrusted.
 
-Each run's page shows how long each stage took, the cost per agent, how much of the prompt came from cache, the test result, every step with its prompts and tool calls, and the final diff.
+Each run's page shows how long each stage took, the cost per agent, how much of the prompt came from cache, the test result, every step with its prompts and tool calls, and the final diff. The dashboard's "How it works?" page tells this walkthrough in pictures, as an animated fix in ten steps.
 
 ![A finished run in the dashboard](images/dashboard.png)
 

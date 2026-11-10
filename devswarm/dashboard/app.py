@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from devswarm.dashboard import views
@@ -75,8 +76,9 @@ def create_app(
         response.headers.update(_SECURITY_HEADERS)
         return response
 
-    @app.exception_handler(HTTPException)
-    async def error_page(request: Request, error: HTTPException) -> Response:
+    # Registered on Starlette's base class, which unknown URLs raise, so they get it too.
+    @app.exception_handler(StarletteHTTPException)
+    async def error_page(request: Request, error: StarletteHTTPException) -> Response:
         # Live-update partials keep a bare body; full pages get the dashboard's look.
         if request.url.path.startswith("/partials/"):
             return Response(str(error.detail), status_code=error.status_code)
@@ -185,6 +187,10 @@ def create_app(
     @app.get("/partials/jobs/{job_id}")
     def job_partial(request: Request, job_id: str) -> Response:
         return templates.TemplateResponse(request, "_job_live.html", job_context(job_id))
+
+    @app.get("/how-it-works")
+    def how_it_works_page(request: Request) -> Response:
+        return templates.TemplateResponse(request, "how_it_works.html", {})
 
     @app.get("/history")
     def history_page(request: Request) -> Response:

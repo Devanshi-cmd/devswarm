@@ -1,0 +1,101 @@
+{% from "_agent_icon.html" import agent_icon %}
+{% set nodes = [
+  ("issue", "Issue", "the bug report"),
+  ("planner", "Planner", "makes a plan"),
+  ("coder", "Coder", "writes the fix"),
+  ("tester", "Tester", "adds tests"),
+  ("tests", "Tests", "the real check"),
+  ("reviewer", "Reviewer", "fresh eyes"),
+  ("pr", "Pull request", "ready to merge"),
+] %}
+{% set steps = [
+  ({"at": 0}, "You share a GitHub issue", "An issue is a note that describes a bug. Paste its link, and DevSwarm takes it from there."),
+  ({"at": 0, "locked": "on"}, "It sets up a locked box", "DevSwarm copies the code into a Docker container with no internet and no passwords. Your real code is never touched."),
+  ({"at": 1, "locked": "on"}, "The Planner makes a plan", "It reads the code and writes down what to change, which files to touch, and how to tell when the bug is fixed."),
+  ({"at": 2, "locked": "on"}, "The Coder writes the fix", "It follows the plan, edits the code, and runs commands to check its work, all inside the box."),
+  ({"at": 3, "locked": "on"}, "The Tester tries to break it", "It adds tests that would catch the bug. It may only change test files, never the fix itself."),
+  ({"at": 4, "locked": "on", "tests": "fail", "loop": "on"}, "DevSwarm runs the tests, and one fails", "The test results decide, not an agent's opinion. The exact failure goes straight back to the Coder."),
+  ({"at": 2, "locked": "on", "tests": "fail", "loop": "on"}, "The Coder tries again", "It sees which test failed and why, then fixes its mistake. If it keeps repeating itself, DevSwarm re-plans once, then stops and explains."),
+  ({"at": 4, "locked": "on", "tests": "pass"}, "All tests pass", "Every test in the project passes, including the Tester's new ones, so the change can move on."),
+  ({"at": 5, "locked": "on", "tests": "pass"}, "The Reviewer double-checks", "It reads the change like a senior engineer. It never sees the Coder's reasoning, so it can't be talked into anything. Problems go back to the Coder."),
+  ({"at": 6, "locked": "on", "tests": "pass", "done": "on"}, "A pull request is opened", "The fix arrives on GitHub with a summary of what changed. A person always makes the final call to merge it."),
+] %}
+<section class="card hiw" id="how-it-works" aria-labelledby="hiw-title">
+  <div class="hiw-intro hiw-reveal">
+    <p class="home-hero-eyebrow">Under the hood</p>
+    <h1 id="hiw-title">How it works?</h1>
+    <p class="hiw-lead">Four AI agents pass your bug along like a relay team, inside a locked box. Here is one fix from start to finish.</p>
+  </div>
+
+  <div class="hiw-stage hiw-reveal" data-at="0" aria-hidden="true">
+    <div class="hiw-sandbox">
+      <span class="hiw-sandbox-label">
+        <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path class="hiw-shackle" d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <span>Locked sandbox<span class="hiw-sandbox-more">: no internet, no secrets</span></span>
+      </span>
+    </div>
+    <div class="hiw-loop"><span>Back to the Coder</span></div>
+    <div class="hiw-rail"><span class="hiw-rail-fill"></span></div>
+    <span class="hiw-token"></span>
+    {% for key, label, sub in nodes %}
+    <div class="hiw-node hiw-node-{{ key }}{% if loop.first %} is-active{% endif %}" data-node="{{ loop.index0 }}">
+      {% if key in ("planner", "coder", "tester", "reviewer") %}{{ agent_icon(key) }}
+      {% elif key == "issue" %}<span class="agent-tile hiw-tile-issue"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.6"/></svg></span>
+      {% elif key == "tests" %}<span class="agent-tile hiw-tile-tests"><svg viewBox="0 0 24 24"><path class="hiw-tests-idle" d="M5 8l4 4-4 4M12 17h7"/><path class="hiw-tests-fail" d="M7 7l10 10M17 7L7 17"/><path class="hiw-tests-pass" d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      {% else %}<span class="agent-tile hiw-tile-pr"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V10a3 3 0 0 0-3-3h-4M13 4.5L10.5 7l2.5 2.5"/></svg></span>
+      {% endif %}
+      <span class="hiw-node-text">
+        <span class="hiw-node-label">{{ label }}</span>
+        <span class="hiw-node-sub">{{ sub }}</span>
+      </span>
+      {% if key in ("planner", "coder", "tester", "reviewer") %}<span class="hiw-working"><i></i><i></i><i></i></span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="hiw-panel hiw-reveal">
+    <ol class="hiw-captions">
+      {% for data, title, text in steps %}
+      <li class="hiw-caption{% if loop.first %} is-current{% endif %}"{% for name, value in data.items() %} data-{{ name }}="{{ value }}"{% endfor %}>
+        <span class="hiw-step-number">Step {{ loop.index }} of {{ steps | length }}</span>
+        <h3>{{ title }}</h3>
+        <p>{{ text }}</p>
+      </li>
+      {% endfor %}
+    </ol>
+    <div class="hiw-controls">
+      <button class="hiw-play" type="button" aria-pressed="false" aria-label="Pause the walkthrough">
+        <svg class="hiw-icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>
+        <svg class="hiw-icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg>
+      </button>
+      <div class="hiw-dots">
+        {% for data, title, text in steps %}
+        <button class="hiw-dot{% if loop.first %} is-current{% endif %}" type="button" aria-label="Step {{ loop.index }}: {{ title }}"></button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <ul class="hiw-rules">
+    <li class="hiw-rule hiw-reveal">
+      <span class="hiw-rule-icon hiw-rule-boss"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="12" cy="12" r="2.5"/><circle cx="19" cy="12" r="2.5"/><path d="M7.5 12h2M14.5 12h2"/></svg></span>
+      <h3>Plain code is the boss</h3>
+      <p>A simple, predictable program decides who goes next. The AI does the work, but never picks the route.</p>
+    </li>
+    <li class="hiw-rule hiw-reveal">
+      <span class="hiw-rule-icon hiw-rule-lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path class="hiw-shackle" d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
+      <h3>A locked box</h3>
+      <p>Every command runs with no internet and no secrets, so even harmful code in a repository has nowhere to send anything.</p>
+    </li>
+    <li class="hiw-rule hiw-reveal">
+      <span class="hiw-rule-icon hiw-rule-check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <h3>Tests, not opinions</h3>
+      <p>DevSwarm runs the tests itself and trusts only the result. No agent gets to grade its own work.</p>
+    </li>
+    <li class="hiw-rule hiw-reveal">
+      <span class="hiw-rule-icon hiw-rule-stop"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M10 2.5h4M12 2.5v2.5"/><path class="hiw-hand" d="M12 13V8.5"/></svg></span>
+      <h3>Knows when to stop</h3>
+      <p>Each fix has hard limits on cost, time and retries, so it can't run away. A typical fix costs less than a cent.</p>
+    </li>
+  </ul>
+</section>

@@ -19,7 +19,7 @@
 
 ## Dashboard
 
-Every run gets its own page. It shows how long each agent took, what each one cost, how much of the prompt came from cache, and whether the tests passed, followed by a step-by-step timeline and the final diff. The dashboard has a day and a night theme.
+Every run gets its own page. It shows how long each agent took, what each one cost, how much of the prompt came from cache, and whether the tests passed, followed by a step-by-step timeline and the final diff. The dashboard has a day and a night theme, and a "How it works?" page that animates one fix from issue to pull request.
 
 ![A finished run: time per stage, cost per agent, cache share, test result and model calls](docs/images/dashboard.png)
 
@@ -92,7 +92,7 @@ uv run devswarm run --issue owner/repo#123
 |---|---|
 | `devswarm run` | Fix a local task or a GitHub issue |
 | `devswarm eval` | Score configurations against the eval tasks |
-| `devswarm dashboard` | Open the web UI: submit issues, watch runs, browse history |
+| `devswarm dashboard` | Open the web UI: submit issues, watch runs, browse history, see how it works |
 | `devswarm worker` | Run the jobs submitted through the web UI |
 | `devswarm report <run_id>` | Print a Markdown summary of a run |
 | `devswarm runs` | List recorded runs |

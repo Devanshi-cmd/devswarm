@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="htmx-config" content='{"allowEval":false,"includeIndicatorStyles":false}'>
   <title>{% block title %}DevSwarm{% endblock %}</title>
-  <script src="/static/site.js?v=8"></script>
+  <script src="/static/site.js?v=9"></script>
   <link rel="icon" href="/static/favicon.svg?v=1" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/dashboard.css?v=11">
+  <link rel="stylesheet" href="/static/dashboard.css?v=15">
   <script src="/static/htmx.min.js" defer></script>
 </head>
 <body>
@@ -20,6 +20,7 @@
       <nav aria-label="Main">
         <a href="/history">History</a>
         <a href="/runs">All runs</a>
+        <a href="/how-it-works">How it works?</a>
         <details class="faq">
           <summary>Help</summary>
           <div class="faq-panel">
@@ -38,6 +39,7 @@
             </dl>
           </div>
         </details>
+        <a class="external-link" href="https://www.devanshitiwari.com" target="_blank" rel="noreferrer">About<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></a>
       </nav>
       <button class="theme-switch" type="button" role="switch" aria-checked="false" aria-label="Night mode">
         <span class="theme-knob" aria-hidden="true">

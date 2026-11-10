@@ -141,6 +141,13 @@ def test_unknown_run_is_404(seed: Seed) -> None:
     assert client.get("/partials/runs/nope").status_code == 404
 
 
+def test_unknown_page_gets_the_themed_error_page(seed: Seed) -> None:
+    response = seed.client().get("/no-such-page")
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/html")
+    assert 'class="site-header"' in response.text
+
+
 @pytest.mark.parametrize("run_id", ["..%2F..%2Fetc", "%2e%2e", "x' OR '1'='1"])
 def test_hostile_run_ids_find_nothing(seed: Seed, run_id: str) -> None:
     assert seed.client().get(f"/runs/{run_id}").status_code == 404
@@ -215,6 +222,19 @@ def test_home_shows_the_latest_pull_request_run(seed: Seed) -> None:
     assert f'class="showcase" href="/runs/{run_id}"' in page
     assert "Dates before 1970 crash" in page
     assert "Pull request opened" in page
+
+
+def test_how_it_works_has_its_own_page(seed: Seed) -> None:
+    client = seed.client()
+    assert 'href="/how-it-works"' in client.get("/").text
+    assert 'href="https://www.devanshitiwari.com"' in client.get("/").text
+    assert "hiw-stage" not in client.get("/").text
+    page = client.get("/how-it-works").text
+    assert 'id="how-it-works"' in page
+    # site.js reads each step's position from the caption, so every step needs one.
+    assert len(re.findall(r'class="hiw-caption[^"]*" data-at="[0-6]"', page)) == 10
+    assert len(re.findall(r'class="hiw-dot( is-current)?"', page)) == 10
+    assert "style=" not in page
 
 
 def test_untrusted_text_is_escaped_everywhere(seed: Seed) -> None:

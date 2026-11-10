@@ -257,6 +257,13 @@ Each decision records what we chose, why, what the alternatives were, and what w
 - **Alternatives:** A JavaScript chart library.
 - **What would break:** Another dependency, a weaker CSP, and no way to test the numbers without a browser.
 
+### The walkthrough is timed by CSS
+
+- **What:** The "How it works?" page animates one fix in ten steps. CSS draws and times everything. `site.js` only copies the current step's `data-*` attributes onto the stage, and moves on when the step's progress-dot animation ends.
+- **Why:** The CSP forbids inline styles and scripts, so all motion has to live in the static stylesheet. With the timing in one place, pausing is just `animation-play-state: paused`, and with reduced motion there is no animation to end, so nothing plays by itself.
+- **Alternatives:** A JavaScript timer, or an animation library.
+- **What would break:** A timer would duplicate every duration in two files, and would need its own pause and reduced-motion handling.
+
 ## M7: Evaluation
 
 ### Hidden tests decide, and they arrive last
